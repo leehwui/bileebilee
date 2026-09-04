@@ -391,6 +391,7 @@ class MainActivity : Activity() {
         } else {
             getString(R.string.popular)
         }
+        liveButton.nextFocusDownId = selectedLiveSourceButton().id
         if (!navigationHasFocus()) selectedLiveSourceButton().requestFocus()
         loadLiveRooms()
     }
@@ -462,13 +463,12 @@ class MainActivity : Activity() {
                 .inflate(R.layout.recommendation_card, liveGrid, false)
             card.id = View.generateViewId()
             if (index < GRID_COLUMN_COUNT) {
-                card.nextFocusUpId = when (index) {
-                    1 -> R.id.following_live_button
-                    2 -> R.id.popular_live_button
-                    else -> R.id.live_button
+                card.nextFocusUpId = if (index < GRID_COLUMN_COUNT / 2) {
+                    R.id.following_live_button
+                } else {
+                    R.id.popular_live_button
                 }
             }
-            if (index == 0) liveButton.nextFocusDownId = card.id
             val cover = card.findViewById<ImageView>(R.id.recommendation_cover)
             val area = listOf(room.parentArea, room.area)
                 .filter(String::isNotBlank)
@@ -820,13 +820,8 @@ class MainActivity : Activity() {
                 .inflate(R.layout.recommendation_card, recommendationsGrid, false)
             card.id = View.generateViewId()
             if (index < GRID_COLUMN_COUNT) {
-                card.nextFocusUpId = if (index == GRID_COLUMN_COUNT - 1) {
-                    R.id.refresh_recommendations_button
-                } else {
-                    R.id.recommendations_button
-                }
+                card.nextFocusUpId = R.id.refresh_recommendations_button
             }
-            if (index == 0) recommendationsButton.nextFocusDownId = card.id
             val cover = card.findViewById<ImageView>(R.id.recommendation_cover)
             card.findViewById<TextView>(R.id.recommendation_title).text = video.title
             card.findViewById<TextView>(R.id.recommendation_duration).text = video.duration
@@ -1010,6 +1005,7 @@ class MainActivity : Activity() {
         followingMode = FollowingMode.CREATORS
         followingTitle.text = getString(R.string.following_accounts_title)
         followingBackButton.visibility = View.GONE
+        loginButton.nextFocusDownId = View.NO_ID
         if (reset || followedCreators.isEmpty()) {
             followingCall?.cancel()
             followingLoading = false
@@ -1158,6 +1154,7 @@ class MainActivity : Activity() {
         loginPanel.visibility = View.GONE
         followingTitle.text = creator.name
         followingBackButton.visibility = View.VISIBLE
+        loginButton.nextFocusDownId = R.id.following_back_button
         if (reset || creatorVideos.isEmpty()) {
             creatorVideosCall?.cancel()
             creatorVideosLoading = false
@@ -1250,7 +1247,6 @@ class MainActivity : Activity() {
             if (index < GRID_COLUMN_COUNT) {
                 card.nextFocusUpId = R.id.following_back_button
             }
-            if (index == 0) loginButton.nextFocusDownId = card.id
             val cover = card.findViewById<ImageView>(R.id.recommendation_cover)
             card.findViewById<TextView>(R.id.recommendation_title).text = video.title
             card.findViewById<TextView>(R.id.recommendation_duration).text = video.duration
@@ -1396,6 +1392,7 @@ class MainActivity : Activity() {
         loginStatus.text = getString(R.string.account_checking)
         followingAccountsButton.visibility = View.GONE
         newQrButton.visibility = View.GONE
+        loginButton.nextFocusDownId = View.NO_ID
     }
 
     private fun showSignedInAccount(account: BilibiliAuthClient.Account) {
@@ -1407,6 +1404,7 @@ class MainActivity : Activity() {
         loginButton.nextFocusDownId = R.id.following_accounts_button
         followingAccountsButton.visibility = View.VISIBLE
         newQrButton.text = getString(R.string.use_another_account)
+        newQrButton.nextFocusUpId = R.id.following_accounts_button
         newQrButton.isEnabled = true
         newQrButton.visibility = View.VISIBLE
     }
@@ -1421,6 +1419,8 @@ class MainActivity : Activity() {
         newQrButton.text = getString(R.string.new_qr_code)
         newQrButton.isEnabled = true
         newQrButton.visibility = View.VISIBLE
+        loginButton.nextFocusDownId = R.id.new_qr_button
+        newQrButton.nextFocusUpId = R.id.login_button
     }
 
     private fun setLoginDetailsStartMargin(marginDp: Int) {
@@ -1447,6 +1447,7 @@ class MainActivity : Activity() {
         loginButton.nextFocusDownId = R.id.new_qr_button
         followingAccountsButton.visibility = View.GONE
         newQrButton.text = getString(R.string.new_qr_code)
+        newQrButton.nextFocusUpId = R.id.login_button
         newQrButton.visibility = View.VISIBLE
         newQrButton.isEnabled = false
 

@@ -129,6 +129,7 @@
                     android:background="@drawable/tv_button_background"
                     android:focusable="true"
                     android:minWidth="145dp"
+                    android:nextFocusUp="@id/live_button"
                     android:nextFocusRight="@id/popular_live_button"
                     android:text="@string/following"
                     android:textColor="@color/tv_button_text" />
@@ -142,6 +143,7 @@
                     android:focusable="true"
                     android:minWidth="145dp"
                     android:nextFocusLeft="@id/following_live_button"
+                    android:nextFocusUp="@id/live_button"
                     android:text="@string/popular"
                     android:textColor="@color/tv_button_text" />
             </LinearLayout>
@@ -229,6 +231,7 @@
                 android:background="@drawable/tv_button_background"
                 android:focusable="true"
                 android:minWidth="220dp"
+                android:nextFocusUp="@id/recommendations_button"
                 android:paddingStart="20dp"
                 android:paddingEnd="20dp"
                 android:text="@string/refresh_recommendations"
@@ -305,6 +308,7 @@
                 android:background="@drawable/tv_button_background"
                 android:focusable="true"
                 android:minWidth="150dp"
+                android:nextFocusUp="@id/login_button"
                 android:text="@string/back_to_following"
                 android:textColor="@color/tv_button_text"
                 android:visibility="gone" />
@@ -364,6 +368,7 @@
             android:background="@drawable/tab_button_background"
             android:focusable="true"
             android:minWidth="0dp"
+            android:nextFocusDown="@id/refresh_recommendations_button"
             android:nextFocusRight="@id/history_button"
             android:paddingStart="16dp"
             android:paddingEnd="16dp"
@@ -393,6 +398,7 @@
             android:background="@drawable/tab_button_background"
             android:focusable="true"
             android:minWidth="0dp"
+            android:nextFocusDown="@id/following_live_button"
             android:nextFocusLeft="@id/history_button"
             android:nextFocusRight="@id/login_button"
             android:text="@string/live"
