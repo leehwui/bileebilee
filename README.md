@@ -54,6 +54,14 @@ The project compiles against API 35 and supports Android 5.1/API 22. Media3 is d
 
 The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
 
+For a clean, versioned sideloading filename, run:
+
+```bash
+./gradlew packageTvApk
+```
+
+The packaged APK is written to `app/build/outputs/distribution/Bileebilee-TV-v<version>.apk`.
+
 ## Run on the configured emulator
 
 ```bash
