@@ -4,7 +4,6 @@ import android.app.Activity
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
-import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -41,9 +40,7 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 class MainActivity : Activity() {
-    private lateinit var diagnosticsPanel: LinearLayout
-    private lateinit var statusText: TextView
-    private lateinit var focusStatus: TextView
+    private lateinit var navigationBar: LinearLayout
     private lateinit var recommendationsButton: Button
     private lateinit var historyButton: Button
     private lateinit var liveButton: Button
@@ -77,7 +74,6 @@ class MainActivity : Activity() {
         .build()
 
     private var player: ExoPlayer? = null
-    private var accountStatus = "Account: checking…"
     private var qrKey: String? = null
     private var qrCall: Call? = null
     private var accountCall: Call? = null
@@ -86,7 +82,8 @@ class MainActivity : Activity() {
     private var liveRoomsCall: Call? = null
     private var liveStreamCall: Call? = null
     private var videoCall: Call? = null
-    private var playbackReturnScreen = PlaybackReturnScreen.DIAGNOSTICS
+    private var playbackReturnScreen = PlaybackReturnScreen.RECOMMENDATIONS
+    private var currentBrowseScreen = BrowseScreen.RECOMMENDATIONS
     private var recommendationReturnFocus: View? = null
     private var recommendationPage = 0
     private var recommendationFeedSignedIn = false
@@ -121,9 +118,7 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        diagnosticsPanel = findViewById(R.id.diagnostics_panel)
-        statusText = findViewById(R.id.status_text)
-        focusStatus = findViewById(R.id.focus_status)
+        navigationBar = findViewById(R.id.navigation_bar)
         recommendationsButton = findViewById(R.id.recommendations_button)
         historyButton = findViewById(R.id.history_button)
         liveButton = findViewById(R.id.live_button)
@@ -175,106 +170,93 @@ class MainActivity : Activity() {
         followingLiveButton.isAllCaps = false
         popularLiveButton.isAllCaps = false
         moreLiveButton.isAllCaps = false
-        installFocusFeedback(recommendationsButton, getString(R.string.recommendations))
-        installFocusFeedback(historyButton, getString(R.string.history))
-        installFocusFeedback(liveButton, getString(R.string.live))
-        installFocusFeedback(loginButton, getString(R.string.qr_login))
-        installFocusFeedback(newQrButton, getString(R.string.new_qr_code))
+        installFocusFeedback(recommendationsButton)
+        installFocusFeedback(historyButton)
+        installFocusFeedback(liveButton)
+        installFocusFeedback(loginButton)
+        installFocusFeedback(newQrButton)
 
-        refreshDiagnostics()
         checkAccount()
-        recommendationsButton.requestFocus()
+        showRecommendations()
     }
 
-    private fun installFocusFeedback(button: Button, label: String) {
+    private fun installFocusFeedback(button: Button) {
         button.setOnFocusChangeListener { view, hasFocus ->
             view.animate()
                 .scaleX(if (hasFocus) 1.06f else 1f)
                 .scaleY(if (hasFocus) 1.06f else 1f)
                 .setDuration(120L)
                 .start()
-            if (hasFocus) focusStatus.text = "Focused: $label • Press OK / Enter"
-        }
-    }
-
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.action == KeyEvent.ACTION_DOWN && ::focusStatus.isInitialized) {
-            val focusedLabel = when (currentFocus?.id) {
-                R.id.recommendations_button -> getString(R.string.recommendations)
-                R.id.history_button -> getString(R.string.history)
-                R.id.live_button -> getString(R.string.live)
-                R.id.login_button -> getString(R.string.qr_login)
-                R.id.new_qr_button -> getString(R.string.new_qr_code)
-                else -> "none"
-            }
-            focusStatus.text = "Input: ${KeyEvent.keyCodeToString(event.keyCode)} • Focused: $focusedLabel"
-        }
-        return super.dispatchKeyEvent(event)
-    }
-
-    private fun refreshDiagnostics() {
-        statusText.text = buildString {
-            appendLine(accountStatus)
-            append(
-                "Bileebilee ${BuildConfig.VERSION_NAME} • ${Build.MANUFACTURER} ${Build.MODEL} • " +
-                    "Android ${Build.VERSION.RELEASE} • " +
-                    "${resources.displayMetrics.widthPixels}×${resources.displayMetrics.heightPixels}"
-            )
         }
     }
 
     private fun showRecommendations() {
-        diagnosticsPanel.visibility = View.GONE
         loginPanel.visibility = View.GONE
         historyPanel.visibility = View.GONE
         livePanel.visibility = View.GONE
         recommendationsPanel.visibility = View.VISIBLE
-        refreshRecommendationsButton.requestFocus()
-        loadRecommendations()
-    }
-
-    private fun hideRecommendations() {
-        recommendationsCall?.cancel()
-        videoCall?.cancel()
-        recommendationsPanel.visibility = View.GONE
-        diagnosticsPanel.visibility = View.VISIBLE
-        recommendationsButton.requestFocus()
+        currentBrowseScreen = BrowseScreen.RECOMMENDATIONS
+        updateNavigation(recommendationsButton)
+        if (recommendationsGrid.childCount == 0) {
+            recommendationsButton.requestFocus()
+            loadRecommendations()
+        } else {
+            recommendationsStatus.text = recommendationSummary()
+            restoreRecommendationFocus()
+        }
     }
 
     private fun showHistory() {
-        diagnosticsPanel.visibility = View.GONE
         recommendationsPanel.visibility = View.GONE
         loginPanel.visibility = View.GONE
         livePanel.visibility = View.GONE
         historyPanel.visibility = View.VISIBLE
-        authClient.resetHistory()
-        moreHistoryButton.requestFocus()
-        loadHistory()
+        currentBrowseScreen = BrowseScreen.HISTORY
+        updateNavigation(historyButton)
+        if (historyGrid.childCount == 0) {
+            authClient.resetHistory()
+            historyButton.requestFocus()
+            loadHistory()
+        } else {
+            historyStatus.text = historySummary()
+            restoreHistoryFocus()
+        }
     }
 
     private fun hideHistory() {
         historyCall?.cancel()
         videoCall?.cancel()
-        historyPanel.visibility = View.GONE
-        diagnosticsPanel.visibility = View.VISIBLE
-        historyButton.requestFocus()
+        showRecommendations()
     }
 
     private fun showLiveRooms() {
-        diagnosticsPanel.visibility = View.GONE
         recommendationsPanel.visibility = View.GONE
         historyPanel.visibility = View.GONE
         loginPanel.visibility = View.GONE
         livePanel.visibility = View.VISIBLE
-        selectLiveSource(BilibiliAuthClient.LiveSource.FOLLOWING)
+        currentBrowseScreen = BrowseScreen.LIVE
+        updateNavigation(liveButton)
+        if (liveGrid.childCount == 0) {
+            liveButton.requestFocus()
+            selectLiveSource(BilibiliAuthClient.LiveSource.FOLLOWING)
+        } else {
+            liveStatus.text = liveSummary()
+            restoreLiveFocus()
+        }
     }
 
     private fun hideLiveRooms() {
         liveRoomsCall?.cancel()
         liveStreamCall?.cancel()
-        livePanel.visibility = View.GONE
-        diagnosticsPanel.visibility = View.VISIBLE
-        liveButton.requestFocus()
+        showRecommendations()
+    }
+
+    private fun updateNavigation(activeButton: Button) {
+        navigationBar.visibility = View.VISIBLE
+        recommendationsButton.isActivated = activeButton === recommendationsButton
+        historyButton.isActivated = activeButton === historyButton
+        liveButton.isActivated = activeButton === liveButton
+        loginButton.isActivated = activeButton === loginButton
     }
 
     private fun selectLiveSource(source: BilibiliAuthClient.LiveSource) {
@@ -354,9 +336,19 @@ class MainActivity : Activity() {
         liveGrid.removeAllViews()
         liveReturnFocus = null
         val cardWidth = gridCardWidth()
-        rooms.forEach { room ->
+        rooms.forEachIndexed { index, room ->
             val card = LayoutInflater.from(this)
                 .inflate(R.layout.recommendation_card, liveGrid, false)
+            card.id = View.generateViewId()
+            if (index < GRID_COLUMN_COUNT) {
+                card.nextFocusUpId = when (index) {
+                    1 -> R.id.following_live_button
+                    2 -> R.id.popular_live_button
+                    3 -> R.id.more_live_button
+                    else -> R.id.live_button
+                }
+            }
+            if (index == 0) liveButton.nextFocusDownId = card.id
             val cover = card.findViewById<ImageView>(R.id.recommendation_cover)
             val area = listOf(room.parentArea, room.area)
                 .filter(String::isNotBlank)
@@ -378,6 +370,7 @@ class MainActivity : Activity() {
                 playLiveRoom(room)
             }
             card.setOnFocusChangeListener { view, hasFocus ->
+                if (hasFocus) liveReturnFocus = view
                 view.animate()
                     .scaleX(if (hasFocus) 1.055f else 1f)
                     .scaleY(if (hasFocus) 1.055f else 1f)
@@ -487,9 +480,18 @@ class MainActivity : Activity() {
         historyGrid.removeAllViews()
         historyReturnFocus = null
         val cardWidth = gridCardWidth()
-        items.forEach { item ->
+        items.forEachIndexed { index, item ->
             val card = LayoutInflater.from(this)
                 .inflate(R.layout.recommendation_card, historyGrid, false)
+            card.id = View.generateViewId()
+            if (index < GRID_COLUMN_COUNT) {
+                card.nextFocusUpId = if (index == GRID_COLUMN_COUNT - 1) {
+                    R.id.more_history_button
+                } else {
+                    R.id.history_button
+                }
+            }
+            if (index == 0) historyButton.nextFocusDownId = card.id
             val cover = card.findViewById<ImageView>(R.id.recommendation_cover)
             val displayTitle = listOf(item.title, item.subtitle)
                 .filter(String::isNotBlank)
@@ -511,6 +513,7 @@ class MainActivity : Activity() {
                 playHistory(item)
             }
             card.setOnFocusChangeListener { view, hasFocus ->
+                if (hasFocus) historyReturnFocus = view
                 view.animate()
                     .scaleX(if (hasFocus) 1.055f else 1f)
                     .scaleY(if (hasFocus) 1.055f else 1f)
@@ -641,9 +644,18 @@ class MainActivity : Activity() {
         recommendationsGrid.removeAllViews()
         recommendationReturnFocus = null
         val cardWidth = gridCardWidth()
-        videos.forEach { video ->
+        videos.forEachIndexed { index, video ->
             val card = LayoutInflater.from(this)
                 .inflate(R.layout.recommendation_card, recommendationsGrid, false)
+            card.id = View.generateViewId()
+            if (index < GRID_COLUMN_COUNT) {
+                card.nextFocusUpId = if (index == GRID_COLUMN_COUNT - 1) {
+                    R.id.refresh_recommendations_button
+                } else {
+                    R.id.recommendations_button
+                }
+            }
+            if (index == 0) recommendationsButton.nextFocusDownId = card.id
             val cover = card.findViewById<ImageView>(R.id.recommendation_cover)
             card.findViewById<TextView>(R.id.recommendation_title).text = video.title
             card.findViewById<TextView>(R.id.recommendation_duration).text = video.duration
@@ -659,6 +671,7 @@ class MainActivity : Activity() {
                 playRecommendation(video)
             }
             card.setOnFocusChangeListener { view, hasFocus ->
+                if (hasFocus) recommendationReturnFocus = view
                 view.animate()
                     .scaleX(if (hasFocus) 1.055f else 1f)
                     .scaleY(if (hasFocus) 1.055f else 1f)
@@ -790,27 +803,24 @@ class MainActivity : Activity() {
         accountCall?.cancel()
         accountCall = authClient.checkSession { result ->
             runOnUiThread {
-                accountStatus = result.fold(
+                result.fold(
                     onSuccess = { account ->
-                        loginButton.text = account?.let {
-                            getString(R.string.home_account_signed_in, it.name)
-                        } ?: getString(R.string.home_account)
-                        account?.let { "Account: ${it.name} (UID ${it.mid})" }
-                            ?: "Account: not signed in"
+                        loginButton.contentDescription = account?.let {
+                            "Account, signed in as ${it.name}"
+                        } ?: "Account, not signed in"
                     },
                     onFailure = { error ->
-                        loginButton.text = getString(R.string.home_account)
-                        "Account check failed: ${error.message.orEmpty()}"
+                        loginButton.contentDescription =
+                            "Account check failed: ${error.message.orEmpty()}"
                     }
                 )
-                refreshDiagnostics()
             }
         }
     }
 
     private fun startQrLogin() {
         cancelQrLogin()
-        stopPlayback()
+        updateNavigation(loginButton)
         loginPanel.visibility = View.VISIBLE
         qrImage.setImageDrawable(null)
         loginStatus.text = "Requesting a QR code…"
@@ -873,8 +883,6 @@ class MainActivity : Activity() {
                                 qrKey = null
                                 mainHandler.postDelayed({
                                     hideQrLogin()
-                                    accountStatus = "Account: verifying sign-in…"
-                                    refreshDiagnostics()
                                     checkAccount()
                                 }, 900L)
                             }
@@ -904,7 +912,20 @@ class MainActivity : Activity() {
     private fun hideQrLogin() {
         cancelQrLogin()
         loginPanel.visibility = View.GONE
-        loginButton.requestFocus()
+        when (currentBrowseScreen) {
+            BrowseScreen.RECOMMENDATIONS -> {
+                updateNavigation(recommendationsButton)
+                recommendationsButton.requestFocus()
+            }
+            BrowseScreen.HISTORY -> {
+                updateNavigation(historyButton)
+                historyButton.requestFocus()
+            }
+            BrowseScreen.LIVE -> {
+                updateNavigation(liveButton)
+                liveButton.requestFocus()
+            }
+        }
     }
 
     @androidx.annotation.OptIn(markerClass = [UnstableApi::class])
@@ -937,7 +958,7 @@ class MainActivity : Activity() {
                     }
                 })
                 playerView.player = exoPlayer
-                diagnosticsPanel.visibility = View.GONE
+                navigationBar.visibility = View.GONE
                 recommendationsPanel.visibility = View.GONE
                 historyPanel.visibility = View.GONE
                 livePanel.visibility = View.GONE
@@ -998,25 +1019,29 @@ class MainActivity : Activity() {
         val returnScreen = playbackReturnScreen
         finishPlaybackTracking()
         releasePlayer()
-        playbackReturnScreen = PlaybackReturnScreen.DIAGNOSTICS
-        diagnosticsPanel.visibility = View.GONE
+        navigationBar.visibility = View.VISIBLE
         recommendationsPanel.visibility = View.GONE
         historyPanel.visibility = View.GONE
         livePanel.visibility = View.GONE
         when (returnScreen) {
             PlaybackReturnScreen.RECOMMENDATIONS -> {
+                currentBrowseScreen = BrowseScreen.RECOMMENDATIONS
+                updateNavigation(recommendationsButton)
                 recommendationsPanel.visibility = View.VISIBLE
                 recommendationsStatus.text = recommendationSummary()
             }
             PlaybackReturnScreen.HISTORY -> {
+                currentBrowseScreen = BrowseScreen.HISTORY
+                updateNavigation(historyButton)
                 historyPanel.visibility = View.VISIBLE
                 historyStatus.text = historySummary()
             }
             PlaybackReturnScreen.LIVE -> {
+                currentBrowseScreen = BrowseScreen.LIVE
+                updateNavigation(liveButton)
                 livePanel.visibility = View.VISIBLE
                 liveStatus.text = liveSummary()
             }
-            PlaybackReturnScreen.DIAGNOSTICS -> diagnosticsPanel.visibility = View.VISIBLE
         }
     }
 
@@ -1037,10 +1062,6 @@ class MainActivity : Activity() {
                 liveStatus.text = message
                 restoreLiveFocus()
             }
-            PlaybackReturnScreen.DIAGNOSTICS -> {
-                statusText.append("\n$message")
-                liveButton.requestFocus()
-            }
         }
     }
 
@@ -1052,16 +1073,11 @@ class MainActivity : Activity() {
                 PlaybackReturnScreen.RECOMMENDATIONS -> restoreRecommendationFocus()
                 PlaybackReturnScreen.HISTORY -> restoreHistoryFocus()
                 PlaybackReturnScreen.LIVE -> restoreLiveFocus()
-                PlaybackReturnScreen.DIAGNOSTICS -> liveButton.requestFocus()
             }
             return true
         }
         if (keyCode == KeyEvent.KEYCODE_BACK && loginPanel.visibility == View.VISIBLE) {
             hideQrLogin()
-            return true
-        }
-        if (keyCode == KeyEvent.KEYCODE_BACK && recommendationsPanel.visibility == View.VISIBLE) {
-            hideRecommendations()
             return true
         }
         if (keyCode == KeyEvent.KEYCODE_BACK && historyPanel.visibility == View.VISIBLE) {
@@ -1084,12 +1100,9 @@ class MainActivity : Activity() {
                 PlaybackReturnScreen.RECOMMENDATIONS -> restoreRecommendationFocus()
                 PlaybackReturnScreen.HISTORY -> restoreHistoryFocus()
                 PlaybackReturnScreen.LIVE -> restoreLiveFocus()
-                PlaybackReturnScreen.DIAGNOSTICS -> liveButton.requestFocus()
             }
         } else if (loginPanel.visibility == View.VISIBLE) {
             hideQrLogin()
-        } else if (recommendationsPanel.visibility == View.VISIBLE) {
-            hideRecommendations()
         } else if (historyPanel.visibility == View.VISIBLE) {
             hideHistory()
         } else if (livePanel.visibility == View.VISIBLE) {
@@ -1115,7 +1128,12 @@ class MainActivity : Activity() {
     }
 
     private enum class PlaybackReturnScreen {
-        DIAGNOSTICS,
+        RECOMMENDATIONS,
+        HISTORY,
+        LIVE
+    }
+
+    private enum class BrowseScreen {
         RECOMMENDATIONS,
         HISTORY,
         LIVE

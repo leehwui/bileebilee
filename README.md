@@ -2,13 +2,13 @@
 
 A lightweight, remote-first Bilibili client for Android TV, initially targeting the Xiaomi Mi Box 3 Enhanced Edition running Android 5.1 (API 22).
 
-## Current milestone (0.6.0)
+## Current milestone (0.7.0)
 
 The current build provides:
 
-- A simple, modern TV home screen with large remote-friendly destinations
+- A recommendation-first landing page with persistent TV navigation tabs
+- Focus and loaded-content preservation while switching sections
 - Consistent TV safe-area padding and comfortably spaced content cards
-- Android, display, ABI, and AVC/HEVC decoder diagnostics
 - D-pad focus navigation
 - Bilibili QR-code login with private on-device session storage
 - Remote-friendly, paginated browsing of popular Bilibili live rooms
