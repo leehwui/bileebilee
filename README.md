@@ -2,7 +2,7 @@
 
 A lightweight, remote-first Bilibili client for Android TV, initially targeting the Xiaomi Mi Box 3 Enhanced Edition running Android 5.1 (API 22).
 
-## Current milestone (0.3.0)
+## Current milestone (0.3.1)
 
 The current build provides:
 
@@ -12,6 +12,7 @@ The current build provides:
 - Public Bilibili live-room discovery
 - AVC live playback with HLS preferred and FLV fallback
 - Personalized recommendations from Bilibili's mobile feed
+- Persistent mobile feed identity, app-style request context, and cursor-based refreshes
 - A four-column TV video grid with covers, metadata, and remote focus states
 - Progressive video playback for recommended videos
 - Back-button return from playback to the originating screen and card

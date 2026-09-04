@@ -74,6 +74,8 @@ class MainActivity : Activity() {
     private var videoCall: Call? = null
     private var playbackReturnsToRecommendations = false
     private var recommendationReturnFocus: View? = null
+    private var recommendationPage = 0
+    private var recommendationFeedSignedIn = false
     private val coverCalls = mutableListOf<Call>()
     private val coverCache = object : LruCache<String, Bitmap>(12 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
@@ -189,14 +191,16 @@ class MainActivity : Activity() {
             runOnUiThread {
                 refreshRecommendationsButton.isEnabled = true
                 result.fold(
-                    onSuccess = { videos ->
-                        renderRecommendations(videos)
-                        recommendationsStatus.text = if (videos.isEmpty()) {
+                    onSuccess = { page ->
+                        recommendationPage = page.page
+                        recommendationFeedSignedIn = page.signedIn
+                        renderRecommendations(page.videos)
+                        recommendationsStatus.text = if (page.videos.isEmpty()) {
                             "No playable videos were returned."
                         } else {
-                            "${videos.size} videos • Press OK to play • Back for device tools"
+                            recommendationSummary()
                         }
-                        if (videos.isNotEmpty()) {
+                        if (page.videos.isNotEmpty()) {
                             recommendationsGrid.post { recommendationsGrid.getChildAt(0)?.requestFocus() }
                         }
                     },
@@ -284,6 +288,12 @@ class MainActivity : Activity() {
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun recommendationSummary(): String {
+        val session = if (recommendationFeedSignedIn) "signed in" else "guest"
+        return "${recommendationsGrid.childCount} videos • Mobile $session • " +
+            "Page $recommendationPage • Press OK to play"
+    }
 
     private fun restoreRecommendationFocus() {
         val target = recommendationReturnFocus
@@ -600,8 +610,7 @@ class MainActivity : Activity() {
         if (returnToRecommendations) {
             diagnosticsPanel.visibility = View.GONE
             recommendationsPanel.visibility = View.VISIBLE
-            recommendationsStatus.text =
-                "${recommendationsGrid.childCount} videos • Press OK to play • Back for device tools"
+            recommendationsStatus.text = recommendationSummary()
         } else {
             recommendationsPanel.visibility = View.GONE
             diagnosticsPanel.visibility = View.VISIBLE

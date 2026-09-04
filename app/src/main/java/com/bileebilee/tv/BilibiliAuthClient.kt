@@ -1,19 +1,31 @@
 package com.bileebilee.tv
 
 import android.content.Context
+import android.os.Build
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import org.json.JSONObject
 import java.io.IOException
+import java.util.UUID
 
 class BilibiliAuthClient(
     context: Context,
     private val httpClient: OkHttpClient
 ) {
     private val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+    private val deviceName = Build.MODEL.orEmpty().ifBlank { "Android TV" }
+    private val buvid = stableIdentifier(BUVID_KEY, "XY", "infoc", 32)
+    private val feedSessionId = stableIdentifier(FEED_SESSION_KEY, length = 16)
+    private val mobileUserAgent =
+        "Mozilla/5.0 BiliDroid/$ANDROID_APP_VERSION os/android model/$deviceName " +
+            "mobi_app/android build/$ANDROID_BUILD channel/master " +
+            "osVer/${Build.VERSION.RELEASE} network/2"
+    private var feedCursor = 0L
+    private var feedPage = 0
 
     fun generateQr(callback: (Result<QrChallenge>) -> Unit): Call {
         val request = Request.Builder()
@@ -94,19 +106,57 @@ class BilibiliAuthClient(
         }
     }
 
-    fun fetchRecommendations(callback: (Result<List<Recommendation>>) -> Unit): Call {
-        val request = authenticatedRequest(
-            "https://app.bilibili.com/x/v2/feed/index" +
-                "?build=8290300&mobi_app=android&platform=android&device=phone" +
-                "&pull=true&idx=0&column=4"
-        ).build()
+    fun fetchRecommendations(callback: (Result<RecommendationPage>) -> Unit): Call {
+        val initialRequest = feedCursor == 0L
+        val statistics = JSONObject()
+            .put("appId", 1)
+            .put("platform", 3)
+            .put("version", ANDROID_APP_VERSION)
+            .put("abtest", "")
+            .toString()
+        val url = FEED_URL.toHttpUrl().newBuilder()
+            .addQueryParameter("appkey", ANDROID_APP_KEY)
+            .addQueryParameter("build", ANDROID_BUILD)
+            .addQueryParameter("mobi_app", "android")
+            .addQueryParameter("platform", "android")
+            .addQueryParameter("device", "phone")
+            .addQueryParameter("device_name", deviceName)
+            .addQueryParameter("channel", "master")
+            .addQueryParameter("network", "wifi")
+            .addQueryParameter("column", "4")
+            .addQueryParameter("pull", initialRequest.toString())
+            .addQueryParameter("idx", feedCursor.toString())
+            .addQueryParameter("login_event", if (cookieHeader().isBlank()) "1" else "0")
+            .addQueryParameter("c_locale", "zh_CN")
+            .addQueryParameter("s_locale", "zh_CN")
+            .addQueryParameter("fnval", "4048")
+            .addQueryParameter("fnver", "0")
+            .addQueryParameter("force_host", "2")
+            .addQueryParameter("fourk", "0")
+            .addQueryParameter("inline_danmu", "2")
+            .addQueryParameter("inline_sound", "0")
+            .addQueryParameter("recsys_mode", "0")
+            .addQueryParameter("statistics", statistics)
+            .addQueryParameter("ts", (System.currentTimeMillis() / 1_000L).toString())
+            .build()
+        val request = authenticatedRequest(url.toString())
+            .header("User-Agent", mobileUserAgent)
+            .header("APP-KEY", "android64")
+            .header("Buvid", buvid)
+            .header("env", "prod")
+            .header("session_id", feedSessionId)
+            .build()
         return enqueueJson(request, callback) { root ->
             requireApiSuccess(root)
             val items = root.getJSONObject("data").getJSONArray("items")
-            buildList {
+            var nextCursor = feedCursor
+            val videos = buildList {
                 for (index in 0 until items.length()) {
                     val item = items.optJSONObject(index) ?: continue
-                    if (item.optString("goto") != "av" || item.optInt("can_play", 1) == 0) continue
+                    item.optLong("idx").takeIf { it > 0L }?.let { nextCursor = it }
+                    if (item.optString("goto") !in PLAYABLE_FEED_TYPES ||
+                        item.optInt("can_play", 1) == 0
+                    ) continue
                     val playerArgs = item.optJSONObject("player_args") ?: continue
                     val aid = playerArgs.optLong("aid")
                     val cid = playerArgs.optLong("cid")
@@ -124,6 +174,13 @@ class BilibiliAuthClient(
                     )
                 }
             }.take(20)
+            if (nextCursor > 0L) feedCursor = nextCursor
+            feedPage += 1
+            RecommendationPage(
+                videos = videos,
+                page = feedPage,
+                signedIn = cookieHeader().isNotBlank()
+            )
         }
     }
 
@@ -157,6 +214,21 @@ class BilibiliAuthClient(
             .apply {
                 cookieHeader().takeIf(String::isNotBlank)?.let { header("Cookie", it) }
             }
+    }
+
+    private fun stableIdentifier(
+        key: String,
+        prefix: String = "",
+        suffix: String = "",
+        length: Int
+    ): String {
+        preferences.getString(key, null)?.takeIf(String::isNotBlank)?.let { return it }
+        val randomPart = buildString {
+            while (this.length < length) append(UUID.randomUUID().toString().replace("-", ""))
+        }.take(length)
+        return "$prefix$randomPart$suffix".also {
+            preferences.edit().putString(key, it).apply()
+        }
     }
 
     private fun saveSession(response: Response, redirectUrl: String) {
@@ -234,6 +306,11 @@ class BilibiliAuthClient(
         val viewCount: String,
         val duration: String
     )
+    data class RecommendationPage(
+        val videos: List<Recommendation>,
+        val page: Int,
+        val signedIn: Boolean
+    )
 
     enum class QrState {
         WAITING_FOR_SCAN,
@@ -245,8 +322,16 @@ class BilibiliAuthClient(
     companion object {
         private const val PREFERENCES = "bilibili_session"
         private const val COOKIES_KEY = "cookies"
+        private const val BUVID_KEY = "feed_buvid"
+        private const val FEED_SESSION_KEY = "feed_session_id"
+        private const val FEED_URL = "https://app.bilibili.com/x/v2/feed/index"
+        private const val ANDROID_APP_KEY = "1d8b6e7d45233436"
+        private const val ANDROID_BUILD = "8290300"
+        private const val ANDROID_APP_VERSION = "8.29.0"
         private const val USER_AGENT =
-            "Mozilla/5.0 (Linux; Android 5.1; BileebileeTV/0.2) AppleWebKit/537.36 Mobile Safari/537.36"
+            "Mozilla/5.0 (Linux; Android 5.1; BileebileeTV/0.3) " +
+                "AppleWebKit/537.36 Mobile Safari/537.36"
+        private val PLAYABLE_FEED_TYPES = setOf("av", "vertical_av")
         private val LOGIN_COOKIE_NAMES = setOf(
             "DedeUserID",
             "DedeUserID__ckMd5",
