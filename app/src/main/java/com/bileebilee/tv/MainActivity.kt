@@ -1,13 +1,18 @@
 package com.bileebilee.tv
 
 import android.app.Activity
+import android.graphics.Bitmap
+import android.graphics.Color
 import android.media.MediaCodecInfo
 import android.media.MediaCodecList
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.KeyEvent
 import android.view.View
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.media3.common.MediaItem
@@ -18,6 +23,9 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.EncodeHintType
+import com.google.zxing.qrcode.QRCodeWriter
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.OkHttpClient
@@ -34,8 +42,14 @@ class MainActivity : Activity() {
     private lateinit var focusStatus: TextView
     private lateinit var refreshButton: Button
     private lateinit var liveButton: Button
+    private lateinit var loginButton: Button
+    private lateinit var loginPanel: LinearLayout
+    private lateinit var qrImage: ImageView
+    private lateinit var loginStatus: TextView
+    private lateinit var newQrButton: Button
     private lateinit var playerView: PlayerView
     private lateinit var playerHint: TextView
+    private lateinit var authClient: BilibiliAuthClient
 
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -44,6 +58,12 @@ class MainActivity : Activity() {
 
     private var player: ExoPlayer? = null
     private var isFetchingStream = false
+    private var accountStatus = "Account: checking…"
+    private var qrKey: String? = null
+    private var qrCall: Call? = null
+    private var accountCall: Call? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val qrPollRunnable = Runnable { qrKey?.let(::pollQr) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,17 +74,30 @@ class MainActivity : Activity() {
         focusStatus = findViewById(R.id.focus_status)
         refreshButton = findViewById(R.id.refresh_button)
         liveButton = findViewById(R.id.live_button)
+        loginButton = findViewById(R.id.login_button)
+        loginPanel = findViewById(R.id.login_panel)
+        qrImage = findViewById(R.id.qr_image)
+        loginStatus = findViewById(R.id.login_status)
+        newQrButton = findViewById(R.id.new_qr_button)
         refreshButton.isAllCaps = false
         liveButton.isAllCaps = false
+        loginButton.isAllCaps = false
+        newQrButton.isAllCaps = false
         playerView = findViewById(R.id.player_view)
         playerHint = findViewById(R.id.player_hint)
+        authClient = BilibiliAuthClient(this, httpClient)
 
         refreshButton.setOnClickListener { refreshDiagnostics() }
         liveButton.setOnClickListener { startLiveStreamTest() }
+        loginButton.setOnClickListener { startQrLogin() }
+        newQrButton.setOnClickListener { startQrLogin() }
         installFocusFeedback(refreshButton, getString(R.string.refresh_diagnostics))
         installFocusFeedback(liveButton, getString(R.string.test_live_stream))
+        installFocusFeedback(loginButton, getString(R.string.qr_login))
+        installFocusFeedback(newQrButton, getString(R.string.new_qr_code))
 
         refreshDiagnostics()
+        checkAccount()
         refreshButton.requestFocus()
     }
 
@@ -84,6 +117,8 @@ class MainActivity : Activity() {
             val focusedLabel = when (currentFocus?.id) {
                 R.id.refresh_button -> getString(R.string.refresh_diagnostics)
                 R.id.live_button -> getString(R.string.test_live_stream)
+                R.id.login_button -> getString(R.string.qr_login)
+                R.id.new_qr_button -> getString(R.string.new_qr_code)
                 else -> "none"
             }
             focusStatus.text = "Input: ${KeyEvent.keyCodeToString(event.keyCode)} • Focused: $focusedLabel"
@@ -98,6 +133,7 @@ class MainActivity : Activity() {
             appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
             appendLine("ABI: ${Build.SUPPORTED_ABIS.joinToString()}")
             appendLine("Display: ${resources.displayMetrics.widthPixels}x${resources.displayMetrics.heightPixels}")
+            appendLine(accountStatus)
             appendLine()
             appendLine("Hardware video decoders:")
             append(codecSummary())
@@ -105,6 +141,121 @@ class MainActivity : Activity() {
             appendLine("D-pad input: ready")
             appendLine("Network: press “Test public live stream”")
         }
+    }
+
+    private fun checkAccount() {
+        accountCall?.cancel()
+        accountCall = authClient.checkSession { result ->
+            runOnUiThread {
+                accountStatus = result.fold(
+                    onSuccess = { account ->
+                        account?.let { "Account: ${it.name} (UID ${it.mid})" }
+                            ?: "Account: not signed in"
+                    },
+                    onFailure = { error -> "Account check failed: ${error.message.orEmpty()}" }
+                )
+                refreshDiagnostics()
+            }
+        }
+    }
+
+    private fun startQrLogin() {
+        cancelQrLogin()
+        stopPlayback()
+        loginPanel.visibility = View.VISIBLE
+        qrImage.setImageDrawable(null)
+        loginStatus.text = "Requesting a QR code…"
+        newQrButton.isEnabled = false
+        newQrButton.requestFocus()
+
+        qrCall = authClient.generateQr { result ->
+            runOnUiThread {
+                result.fold(
+                    onSuccess = { challenge ->
+                        qrKey = challenge.key
+                        qrImage.setImageBitmap(createQrBitmap(challenge.url))
+                        loginStatus.text = getString(R.string.qr_login_instructions)
+                        newQrButton.isEnabled = true
+                        scheduleQrPoll()
+                    },
+                    onFailure = { error ->
+                        loginStatus.text = "Could not create QR code: ${error.message.orEmpty()}"
+                        newQrButton.isEnabled = true
+                    }
+                )
+            }
+        }
+    }
+
+    private fun createQrBitmap(value: String): Bitmap {
+        val size = 720
+        val matrix = QRCodeWriter().encode(
+            value,
+            BarcodeFormat.QR_CODE,
+            size,
+            size,
+            mapOf(EncodeHintType.MARGIN to 2)
+        )
+        val pixels = IntArray(size * size)
+        for (y in 0 until size) {
+            for (x in 0 until size) {
+                pixels[y * size + x] = if (matrix[x, y]) Color.BLACK else Color.WHITE
+            }
+        }
+        return Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888).also {
+            it.setPixels(pixels, 0, size, 0, 0, size, size)
+        }
+    }
+
+    private fun scheduleQrPoll() {
+        mainHandler.removeCallbacks(qrPollRunnable)
+        mainHandler.postDelayed(qrPollRunnable, QR_POLL_INTERVAL_MS)
+    }
+
+    private fun pollQr(key: String) {
+        qrCall = authClient.pollQr(key) { result ->
+            runOnUiThread {
+                if (key != qrKey || loginPanel.visibility != View.VISIBLE) return@runOnUiThread
+                result.fold(
+                    onSuccess = { poll ->
+                        loginStatus.text = poll.message
+                        when (poll.state) {
+                            BilibiliAuthClient.QrState.AUTHENTICATED -> {
+                                qrKey = null
+                                mainHandler.postDelayed({
+                                    hideQrLogin()
+                                    accountStatus = "Account: verifying sign-in…"
+                                    refreshDiagnostics()
+                                    checkAccount()
+                                }, 900L)
+                            }
+                            BilibiliAuthClient.QrState.EXPIRED -> {
+                                qrKey = null
+                                newQrButton.requestFocus()
+                            }
+                            else -> scheduleQrPoll()
+                        }
+                    },
+                    onFailure = { error ->
+                        loginStatus.text = "QR status check failed: ${error.message.orEmpty()}"
+                        scheduleQrPoll()
+                    }
+                )
+            }
+        }
+    }
+
+    private fun cancelQrLogin() {
+        mainHandler.removeCallbacks(qrPollRunnable)
+        qrCall?.cancel()
+        qrCall = null
+        qrKey = null
+    }
+
+    private fun hideQrLogin() {
+        cancelQrLogin()
+        loginPanel.visibility = View.GONE
+        loginButton.requestFocus()
     }
 
     private fun codecSummary(): String {
@@ -274,6 +425,10 @@ class MainActivity : Activity() {
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_BACK && loginPanel.visibility == View.VISIBLE) {
+            hideQrLogin()
+            return true
+        }
         if (keyCode == KeyEvent.KEYCODE_BACK && player != null) {
             stopPlayback()
             liveButton.requestFocus()
@@ -284,7 +439,9 @@ class MainActivity : Activity() {
 
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
     override fun onBackPressed() {
-        if (player != null) {
+        if (loginPanel.visibility == View.VISIBLE) {
+            hideQrLogin()
+        } else if (player != null) {
             stopPlayback()
             liveButton.requestFocus()
         } else {
@@ -293,6 +450,8 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        cancelQrLogin()
+        accountCall?.cancel()
         stopPlayback()
         super.onDestroy()
     }
@@ -310,5 +469,6 @@ class MainActivity : Activity() {
     private companion object {
         const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 5.1; BileebileeTV/0.1) AppleWebKit/537.36 Mobile Safari/537.36"
+        const val QR_POLL_INTERVAL_MS = 2_000L
     }
 }

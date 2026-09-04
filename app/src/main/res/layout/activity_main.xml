@@ -77,10 +77,25 @@
                 android:focusable="true"
                 android:minWidth="260dp"
                 android:nextFocusLeft="@id/refresh_button"
+                android:nextFocusRight="@id/login_button"
                 android:paddingStart="28dp"
                 android:paddingEnd="28dp"
                 android:textColor="@color/tv_button_text"
                 android:text="@string/test_live_stream" />
+
+            <Button
+                android:id="@+id/login_button"
+                android:layout_width="wrap_content"
+                android:layout_height="56dp"
+                android:layout_marginStart="24dp"
+                android:background="@drawable/tv_button_background"
+                android:focusable="true"
+                android:minWidth="240dp"
+                android:nextFocusLeft="@id/live_button"
+                android:paddingStart="28dp"
+                android:paddingEnd="28dp"
+                android:text="@string/qr_login"
+                android:textColor="@color/tv_button_text" />
         </LinearLayout>
     </LinearLayout>
 
@@ -96,5 +111,62 @@
         android:textColor="#FFFFFF"
         android:textSize="16sp"
         android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/login_panel"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#F2101114"
+        android:focusable="true"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:padding="48dp"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/qr_image"
+            android:layout_width="320dp"
+            android:layout_height="320dp"
+            android:background="#FFFFFF"
+            android:contentDescription="@string/qr_login_title"
+            android:padding="12dp" />
+
+        <LinearLayout
+            android:layout_width="440dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="36dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/qr_login_title"
+                android:textColor="#FFFFFF"
+                android:textSize="32sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/login_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:text="@string/qr_login_instructions"
+                android:textColor="#FFFFFF"
+                android:textSize="19sp" />
+
+            <Button
+                android:id="@+id/new_qr_button"
+                android:layout_width="wrap_content"
+                android:layout_height="56dp"
+                android:layout_marginTop="24dp"
+                android:background="@drawable/tv_button_background"
+                android:focusable="true"
+                android:minWidth="300dp"
+                android:paddingStart="28dp"
+                android:paddingEnd="28dp"
+                android:text="@string/new_qr_code"
+                android:textColor="@color/tv_button_text" />
+        </LinearLayout>
+    </LinearLayout>
 
 </FrameLayout>
