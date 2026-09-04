@@ -4,11 +4,12 @@ import android.content.Context
 import android.os.Build
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
-import okhttp3.FormBody
 import okhttp3.Request
 import okhttp3.Response
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.util.UUID
@@ -31,6 +32,7 @@ class BilibiliAuthClient(
     private var historyCursorViewAt = 0L
     private var historyCursorBusiness = ""
     private var historyPage = 0
+    private var livePage = 0
 
     fun generateQr(callback: (Result<QrChallenge>) -> Unit): Call {
         val request = Request.Builder()
@@ -194,6 +196,85 @@ class BilibiliAuthClient(
         callback: (Result<String>) -> Unit
     ): Call = fetchArchiveVideoUrl(video.aid, video.cid, callback)
 
+    fun resetLiveRooms() {
+        livePage = 0
+    }
+
+    fun fetchLiveRooms(callback: (Result<LiveRoomPage>) -> Unit): Call {
+        val requestedPage = livePage + 1
+        val url = LIVE_ROOMS_URL.toHttpUrl().newBuilder()
+            .addQueryParameter("parent_area_id", "0")
+            .addQueryParameter("area_id", "0")
+            .addQueryParameter("page", requestedPage.toString())
+            .addQueryParameter("page_size", LIVE_PAGE_SIZE.toString())
+            .addQueryParameter("sort_type", "online")
+            .build()
+        val request = authenticatedRequest(url.toString())
+            .header("Referer", "https://live.bilibili.com/")
+            .build()
+        return enqueueJson(request, callback) { root ->
+            requireApiSuccess(root)
+            val data = root.getJSONObject("data")
+            val list = data.optJSONArray("list")
+            val rooms = buildList {
+                if (list != null) {
+                    for (index in 0 until list.length()) {
+                        val item = list.optJSONObject(index) ?: continue
+                        val roomId = item.optLong("roomid")
+                        if (roomId <= 0L) continue
+                        val cover = item.optString("cover")
+                            .ifBlank { item.optString("system_cover") }
+                            .replace("http://", "https://")
+                        add(
+                            LiveRoom(
+                                roomId = roomId,
+                                title = item.optString("title", "Untitled live room"),
+                                coverUrl = cover,
+                                anchor = item.optString("uname"),
+                                popularity = item.optLong("online"),
+                                parentArea = item.optString("parent_name"),
+                                area = item.optString("area_name")
+                            )
+                        )
+                    }
+                }
+            }
+            livePage = requestedPage
+            LiveRoomPage(
+                rooms = rooms,
+                page = livePage,
+                hasMore = rooms.size >= LIVE_PAGE_SIZE
+            )
+        }
+    }
+
+    fun fetchLiveStreamUrl(
+        room: LiveRoom,
+        callback: (Result<String>) -> Unit
+    ): Call {
+        val url = LIVE_PLAY_URL.toHttpUrl().newBuilder()
+            .addQueryParameter("room_id", room.roomId.toString())
+            .addQueryParameter("protocol", "0,1")
+            .addQueryParameter("format", "0,1,2")
+            .addQueryParameter("codec", "0")
+            .addQueryParameter("qn", "80")
+            .addQueryParameter("platform", "web")
+            .addQueryParameter("ptype", "8")
+            .build()
+        val request = authenticatedRequest(url.toString())
+            .header("Referer", "https://live.bilibili.com/${room.roomId}")
+            .build()
+        return enqueueJson(request, callback) { root ->
+            requireApiSuccess(root)
+            val playUrl = root.optJSONObject("data")
+                ?.optJSONObject("playurl_info")
+                ?.optJSONObject("playurl")
+                ?: error("Playback data was missing")
+            selectLiveStreamUrl(playUrl.optJSONArray("stream"))
+                ?: error("No AVC playback URL was returned")
+        }
+    }
+
     fun resetHistory() {
         historyCursorMax = 0L
         historyCursorViewAt = 0L
@@ -337,6 +418,37 @@ class BilibiliAuthClient(
             ?: error("Playback URL was missing")
     }
 
+    private fun selectLiveStreamUrl(streams: JSONArray?): String? {
+        if (streams == null) return null
+        val candidates = mutableListOf<LiveStreamCandidate>()
+        for (streamIndex in 0 until streams.length()) {
+            val stream = streams.optJSONObject(streamIndex) ?: continue
+            val protocol = stream.optString("protocol_name")
+            val formats = stream.optJSONArray("format") ?: continue
+            for (formatIndex in 0 until formats.length()) {
+                val format = formats.optJSONObject(formatIndex) ?: continue
+                val formatName = format.optString("format_name")
+                val codecs = format.optJSONArray("codec") ?: continue
+                for (codecIndex in 0 until codecs.length()) {
+                    val codec = codecs.optJSONObject(codecIndex) ?: continue
+                    if (codec.optString("codec_name") != "avc") continue
+                    val baseUrl = codec.optString("base_url")
+                    val urlInfo = codec.optJSONArray("url_info")?.optJSONObject(0) ?: continue
+                    val fullUrl = urlInfo.optString("host") + baseUrl + urlInfo.optString("extra")
+                    if (!fullUrl.startsWith("http")) continue
+                    val rank = when {
+                        protocol.contains("hls") && formatName.contains("ts") -> 0
+                        protocol.contains("hls") -> 1
+                        formatName.contains("flv") -> 2
+                        else -> 3
+                    }
+                    candidates += LiveStreamCandidate(rank, fullUrl)
+                }
+            }
+        }
+        return candidates.minByOrNull(LiveStreamCandidate::rank)?.url
+    }
+
     private fun authenticatedRequest(url: String): Request.Builder {
         return Request.Builder()
             .url(url)
@@ -448,6 +560,20 @@ class BilibiliAuthClient(
         val page: Int,
         val signedIn: Boolean
     )
+    data class LiveRoom(
+        val roomId: Long,
+        val title: String,
+        val coverUrl: String,
+        val anchor: String,
+        val popularity: Long,
+        val parentArea: String,
+        val area: String
+    )
+    data class LiveRoomPage(
+        val rooms: List<LiveRoom>,
+        val page: Int,
+        val hasMore: Boolean
+    )
     data class HistoryItem(
         val aid: Long,
         val cid: Long,
@@ -481,18 +607,25 @@ class BilibiliAuthClient(
         AUTHENTICATED
     }
 
+    private data class LiveStreamCandidate(val rank: Int, val url: String)
+
     companion object {
         private const val PREFERENCES = "bilibili_session"
         private const val COOKIES_KEY = "cookies"
         private const val BUVID_KEY = "feed_buvid"
         private const val FEED_SESSION_KEY = "feed_session_id"
         private const val FEED_URL = "https://app.bilibili.com/x/v2/feed/index"
+        private const val LIVE_ROOMS_URL =
+            "https://api.live.bilibili.com/room/v3/area/getRoomList"
+        private const val LIVE_PLAY_URL =
+            "https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo"
         private const val HISTORY_URL = "https://api.bilibili.com/x/web-interface/history/cursor"
         private const val PGC_PLAY_URL = "https://api.bilibili.com/pgc/player/web/playurl"
         private const val HEARTBEAT_URL = "https://api.bilibili.com/x/click-interface/web/heartbeat"
         private const val ANDROID_APP_KEY = "1d8b6e7d45233436"
         private const val ANDROID_BUILD = "8290300"
         private const val ANDROID_APP_VERSION = "8.29.0"
+        private const val LIVE_PAGE_SIZE = 20
         private const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 5.1; BileebileeTV/0.3) " +
                 "AppleWebKit/537.36 Mobile Safari/537.36"

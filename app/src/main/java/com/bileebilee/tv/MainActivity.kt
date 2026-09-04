@@ -36,8 +36,6 @@ import okhttp3.Callback
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
-import org.json.JSONArray
-import org.json.JSONObject
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -66,6 +64,10 @@ class MainActivity : Activity() {
     private lateinit var historyStatus: TextView
     private lateinit var historyGrid: GridLayout
     private lateinit var moreHistoryButton: Button
+    private lateinit var livePanel: LinearLayout
+    private lateinit var liveStatus: TextView
+    private lateinit var liveGrid: GridLayout
+    private lateinit var moreLiveButton: Button
     private lateinit var authClient: BilibiliAuthClient
 
     private val httpClient = OkHttpClient.Builder()
@@ -74,13 +76,14 @@ class MainActivity : Activity() {
         .build()
 
     private var player: ExoPlayer? = null
-    private var isFetchingStream = false
     private var accountStatus = "Account: checking…"
     private var qrKey: String? = null
     private var qrCall: Call? = null
     private var accountCall: Call? = null
     private var recommendationsCall: Call? = null
     private var historyCall: Call? = null
+    private var liveRoomsCall: Call? = null
+    private var liveStreamCall: Call? = null
     private var videoCall: Call? = null
     private var playbackReturnScreen = PlaybackReturnScreen.DIAGNOSTICS
     private var recommendationReturnFocus: View? = null
@@ -90,6 +93,8 @@ class MainActivity : Activity() {
     private var historyPage = 0
     private var historyHasMore = false
     private var historySkipped = 0
+    private var liveReturnFocus: View? = null
+    private var livePage = 0
     private var playbackHeartbeatCall: Call? = null
     private var activePlaybackTracking: BilibiliAuthClient.PlaybackTracking? = null
     private var playbackStartedAt = 0L
@@ -133,6 +138,10 @@ class MainActivity : Activity() {
         historyStatus = findViewById(R.id.history_status)
         historyGrid = findViewById(R.id.history_grid)
         moreHistoryButton = findViewById(R.id.more_history_button)
+        livePanel = findViewById(R.id.live_panel)
+        liveStatus = findViewById(R.id.live_status)
+        liveGrid = findViewById(R.id.live_grid)
+        moreLiveButton = findViewById(R.id.more_live_button)
         recommendationsButton.isAllCaps = false
         historyButton.isAllCaps = false
         liveButton.isAllCaps = false
@@ -144,16 +153,18 @@ class MainActivity : Activity() {
 
         recommendationsButton.setOnClickListener { showRecommendations() }
         historyButton.setOnClickListener { showHistory() }
-        liveButton.setOnClickListener { startLiveStreamTest() }
+        liveButton.setOnClickListener { showLiveRooms() }
         loginButton.setOnClickListener { startQrLogin() }
         newQrButton.setOnClickListener { startQrLogin() }
         refreshRecommendationsButton.setOnClickListener { loadRecommendations() }
         moreHistoryButton.setOnClickListener { loadHistory() }
+        moreLiveButton.setOnClickListener { loadLiveRooms() }
         refreshRecommendationsButton.isAllCaps = false
         moreHistoryButton.isAllCaps = false
+        moreLiveButton.isAllCaps = false
         installFocusFeedback(recommendationsButton, getString(R.string.recommendations))
         installFocusFeedback(historyButton, getString(R.string.history))
-        installFocusFeedback(liveButton, getString(R.string.test_live_stream))
+        installFocusFeedback(liveButton, getString(R.string.live))
         installFocusFeedback(loginButton, getString(R.string.qr_login))
         installFocusFeedback(newQrButton, getString(R.string.new_qr_code))
 
@@ -178,7 +189,7 @@ class MainActivity : Activity() {
             val focusedLabel = when (currentFocus?.id) {
                 R.id.recommendations_button -> getString(R.string.recommendations)
                 R.id.history_button -> getString(R.string.history)
-                R.id.live_button -> getString(R.string.test_live_stream)
+                R.id.live_button -> getString(R.string.live)
                 R.id.login_button -> getString(R.string.qr_login)
                 R.id.new_qr_button -> getString(R.string.new_qr_code)
                 else -> "none"
@@ -201,13 +212,15 @@ class MainActivity : Activity() {
             append(codecSummary())
             appendLine()
             appendLine("D-pad input: ready")
-            appendLine("Network: press “Test public live stream”")
+            appendLine("Network: live-room browsing ready")
         }
     }
 
     private fun showRecommendations() {
         diagnosticsPanel.visibility = View.GONE
         loginPanel.visibility = View.GONE
+        historyPanel.visibility = View.GONE
+        livePanel.visibility = View.GONE
         recommendationsPanel.visibility = View.VISIBLE
         refreshRecommendationsButton.requestFocus()
         loadRecommendations()
@@ -225,6 +238,7 @@ class MainActivity : Activity() {
         diagnosticsPanel.visibility = View.GONE
         recommendationsPanel.visibility = View.GONE
         loginPanel.visibility = View.GONE
+        livePanel.visibility = View.GONE
         historyPanel.visibility = View.VISIBLE
         authClient.resetHistory()
         moreHistoryButton.requestFocus()
@@ -237,6 +251,145 @@ class MainActivity : Activity() {
         historyPanel.visibility = View.GONE
         diagnosticsPanel.visibility = View.VISIBLE
         historyButton.requestFocus()
+    }
+
+    private fun showLiveRooms() {
+        diagnosticsPanel.visibility = View.GONE
+        recommendationsPanel.visibility = View.GONE
+        historyPanel.visibility = View.GONE
+        loginPanel.visibility = View.GONE
+        livePanel.visibility = View.VISIBLE
+        authClient.resetLiveRooms()
+        moreLiveButton.requestFocus()
+        loadLiveRooms()
+    }
+
+    private fun hideLiveRooms() {
+        liveRoomsCall?.cancel()
+        liveStreamCall?.cancel()
+        livePanel.visibility = View.GONE
+        diagnosticsPanel.visibility = View.VISIBLE
+        liveButton.requestFocus()
+    }
+
+    private fun loadLiveRooms() {
+        liveRoomsCall?.cancel()
+        liveStatus.text = "Loading popular live rooms…"
+        moreLiveButton.isEnabled = false
+        liveRoomsCall = authClient.fetchLiveRooms { result ->
+            runOnUiThread {
+                result.fold(
+                    onSuccess = { page ->
+                        livePage = page.page
+                        renderLiveRooms(page.rooms)
+                        liveStatus.text = if (page.rooms.isEmpty()) {
+                            "No active live rooms were returned."
+                        } else {
+                            liveSummary()
+                        }
+                        moreLiveButton.isEnabled = page.hasMore
+                        if (page.rooms.isNotEmpty()) {
+                            liveGrid.post { liveGrid.getChildAt(0)?.requestFocus() }
+                        } else {
+                            moreLiveButton.requestFocus()
+                        }
+                    },
+                    onFailure = { error ->
+                        liveStatus.text = "Live-room request failed: ${error.message.orEmpty()}"
+                        moreLiveButton.isEnabled = true
+                        moreLiveButton.requestFocus()
+                    }
+                )
+            }
+        }
+    }
+
+    private fun renderLiveRooms(rooms: List<BilibiliAuthClient.LiveRoom>) {
+        coverCalls.forEach(Call::cancel)
+        coverCalls.clear()
+        liveGrid.removeAllViews()
+        liveReturnFocus = null
+        val cardWidth = (resources.displayMetrics.widthPixels - dp(96)) / 4
+        rooms.forEach { room ->
+            val card = LayoutInflater.from(this)
+                .inflate(R.layout.recommendation_card, liveGrid, false)
+            val cover = card.findViewById<ImageView>(R.id.recommendation_cover)
+            val area = listOf(room.parentArea, room.area)
+                .filter(String::isNotBlank)
+                .distinct()
+                .joinToString(" · ")
+            card.findViewById<TextView>(R.id.recommendation_title).text = room.title
+            card.findViewById<TextView>(R.id.recommendation_duration).text =
+                formatPopularity(room.popularity)
+            card.findViewById<TextView>(R.id.recommendation_meta).text =
+                listOf(room.anchor, area).filter(String::isNotBlank).joinToString("  •  ")
+            card.contentDescription = listOf(
+                room.title,
+                room.anchor,
+                area,
+                formatPopularity(room.popularity)
+            ).filter(String::isNotBlank).joinToString(", ")
+            card.setOnClickListener {
+                liveReturnFocus = card
+                playLiveRoom(room)
+            }
+            card.setOnFocusChangeListener { view, hasFocus ->
+                view.animate()
+                    .scaleX(if (hasFocus) 1.055f else 1f)
+                    .scaleY(if (hasFocus) 1.055f else 1f)
+                    .setDuration(120L)
+                    .start()
+                view.elevation = if (hasFocus) 18f else 0f
+            }
+            liveGrid.addView(
+                card,
+                GridLayout.LayoutParams().apply {
+                    width = cardWidth
+                    height = GridLayout.LayoutParams.WRAP_CONTENT
+                }
+            )
+            loadCover(room.coverUrl, cover)
+        }
+    }
+
+    private fun formatPopularity(value: Long): String = when {
+        value >= 1_000_000L -> String.format(Locale.US, "%.1fm", value / 1_000_000.0)
+        value >= 1_000L -> String.format(Locale.US, "%.1fk", value / 1_000.0)
+        value > 0L -> value.toString()
+        else -> "Live"
+    }
+
+    private fun liveSummary(): String =
+        "${liveGrid.childCount} rooms • Popular page $livePage • Press OK to watch"
+
+    private fun restoreLiveFocus() {
+        val target = liveReturnFocus
+            ?.takeIf { it.parent === liveGrid }
+            ?: liveGrid.getChildAt(0)
+        target?.requestFocus()
+    }
+
+    private fun playLiveRoom(room: BilibiliAuthClient.LiveRoom) {
+        liveStreamCall?.cancel()
+        liveStatus.text = "Opening ${room.title}…"
+        liveStreamCall = authClient.fetchLiveStreamUrl(room) { result ->
+            runOnUiThread {
+                result.fold(
+                    onSuccess = { url ->
+                        playerHint.text = getString(R.string.live_player_hint)
+                        playMedia(
+                            url = url,
+                            referer = "https://live.bilibili.com/${room.roomId}",
+                            returnScreen = PlaybackReturnScreen.LIVE
+                        )
+                    },
+                    onFailure = { error ->
+                        liveStatus.text = "Could not play live room: ${error.message.orEmpty()}"
+                        restoreLiveFocus()
+                    }
+                )
+            }
+        }
     }
 
     private fun loadHistory() {
@@ -471,13 +624,14 @@ class MainActivity : Activity() {
     }
 
     private fun loadCover(url: String, imageView: ImageView) {
+        if (url.isBlank()) return
         imageView.tag = url
         coverCache.get(url)?.let {
             imageView.setImageBitmap(it)
             return
         }
         val request = Request.Builder()
-            .url(url)
+            .url(coverThumbnailUrl(url))
             .header("User-Agent", USER_AGENT)
             .header("Referer", "https://www.bilibili.com/")
             .build()
@@ -490,7 +644,7 @@ class MainActivity : Activity() {
                 response.use {
                     if (!it.isSuccessful) return
                     val bytes = it.body?.bytes() ?: return
-                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return
+                    val bitmap = decodeCover(bytes) ?: return
                     coverCache.put(url, bitmap)
                     runOnUiThread {
                         if (imageView.tag == url) imageView.setImageBitmap(bitmap)
@@ -498,6 +652,39 @@ class MainActivity : Activity() {
                 }
             }
         })
+    }
+
+    private fun coverThumbnailUrl(url: String): String {
+        return if (url.contains("hdslb.com/") && !url.substringAfterLast('/').contains('@')) {
+            "$url@640w_360h_1c.webp"
+        } else {
+            url
+        }
+    }
+
+    private fun decodeCover(bytes: ByteArray): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sampleSize = 1
+        while (bounds.outWidth / sampleSize > COVER_WIDTH_PX ||
+            bounds.outHeight / sampleSize > COVER_HEIGHT_PX
+        ) {
+            sampleSize *= 2
+        }
+        return try {
+            BitmapFactory.decodeByteArray(
+                bytes,
+                0,
+                bytes.size,
+                BitmapFactory.Options().apply {
+                    inSampleSize = sampleSize
+                    inPreferredConfig = Bitmap.Config.RGB_565
+                }
+            )
+        } catch (_: OutOfMemoryError) {
+            null
+        }
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
@@ -671,106 +858,6 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun startLiveStreamTest() {
-        if (isFetchingStream) return
-        isFetchingStream = true
-        liveButton.isEnabled = false
-        statusText.append("\nFinding an active Bilibili live room…")
-
-        val roomListRequest = Request.Builder()
-            .url("https://api.live.bilibili.com/room/v3/area/getRoomList?parent_area_id=0&area_id=0&page=1&page_size=20&sort_type=online")
-            .header("User-Agent", USER_AGENT)
-            .header("Referer", "https://live.bilibili.com/")
-            .build()
-
-        httpClient.newCall(roomListRequest).enqueue(object : Callback {
-            override fun onFailure(call: Call, error: IOException) = failLiveTest("Room list failed", error)
-
-            override fun onResponse(call: Call, response: Response) {
-                response.use {
-                    if (!it.isSuccessful) return failLiveTest("Room list HTTP ${it.code}")
-                    val body = it.body?.string().orEmpty()
-                    val rooms = JSONObject(body).optJSONObject("data")?.optJSONArray("list")
-                    val roomId = rooms?.firstLong("roomid")
-                        ?: return failLiveTest("No active live room was returned")
-                    fetchPlayableStream(roomId)
-                }
-            }
-        })
-    }
-
-    private fun fetchPlayableStream(roomId: Long) {
-        val url = "https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo" +
-            "?room_id=$roomId&protocol=0,1&format=0,1,2&codec=0&qn=80&platform=web&ptype=8"
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", USER_AGENT)
-            .header("Referer", "https://live.bilibili.com/$roomId")
-            .build()
-
-        httpClient.newCall(request).enqueue(object : Callback {
-            override fun onFailure(call: Call, error: IOException) = failLiveTest("Stream lookup failed", error)
-
-            override fun onResponse(call: Call, response: Response) {
-                response.use {
-                    if (!it.isSuccessful) return failLiveTest("Stream lookup HTTP ${it.code}")
-                    val root = JSONObject(it.body?.string().orEmpty())
-                    if (root.optInt("code", -1) != 0) {
-                        return failLiveTest("Bilibili API: ${root.optString("message", "unknown error")}")
-                    }
-                    val playurl = root.optJSONObject("data")
-                        ?.optJSONObject("playurl_info")
-                        ?.optJSONObject("playurl")
-                        ?: return failLiveTest("Playback data was missing")
-                    val streamUrl = selectStreamUrl(playurl.optJSONArray("stream"))
-                        ?: return failLiveTest("No AVC playback URL was returned")
-                    runOnUiThread {
-                        playerHint.text = getString(R.string.player_hint)
-                        isFetchingStream = false
-                        liveButton.isEnabled = true
-                        playMedia(
-                            url = streamUrl,
-                            referer = "https://live.bilibili.com/$roomId",
-                            returnScreen = PlaybackReturnScreen.DIAGNOSTICS
-                        )
-                    }
-                }
-            }
-        })
-    }
-
-    private fun selectStreamUrl(streams: JSONArray?): String? {
-        if (streams == null) return null
-        val candidates = mutableListOf<StreamCandidate>()
-        for (streamIndex in 0 until streams.length()) {
-            val stream = streams.optJSONObject(streamIndex) ?: continue
-            val protocol = stream.optString("protocol_name")
-            val formats = stream.optJSONArray("format") ?: continue
-            for (formatIndex in 0 until formats.length()) {
-                val format = formats.optJSONObject(formatIndex) ?: continue
-                val formatName = format.optString("format_name")
-                val codecs = format.optJSONArray("codec") ?: continue
-                for (codecIndex in 0 until codecs.length()) {
-                    val codec = codecs.optJSONObject(codecIndex) ?: continue
-                    if (codec.optString("codec_name") != "avc") continue
-                    val baseUrl = codec.optString("base_url")
-                    val urlInfo = codec.optJSONArray("url_info")?.optJSONObject(0) ?: continue
-                    val fullUrl = urlInfo.optString("host") + baseUrl + urlInfo.optString("extra")
-                    if (fullUrl.startsWith("http")) {
-                        val rank = when {
-                            protocol.contains("hls") && formatName.contains("ts") -> 0
-                            protocol.contains("hls") -> 1
-                            formatName.contains("flv") -> 2
-                            else -> 3
-                        }
-                        candidates += StreamCandidate(rank, fullUrl)
-                    }
-                }
-            }
-        }
-        return candidates.minByOrNull(StreamCandidate::rank)?.url
-    }
-
     @androidx.annotation.OptIn(markerClass = [UnstableApi::class])
     private fun playMedia(
         url: String,
@@ -804,6 +891,7 @@ class MainActivity : Activity() {
                 diagnosticsPanel.visibility = View.GONE
                 recommendationsPanel.visibility = View.GONE
                 historyPanel.visibility = View.GONE
+                livePanel.visibility = View.GONE
                 loginPanel.visibility = View.GONE
                 playerView.visibility = View.VISIBLE
                 playerHint.visibility = View.VISIBLE
@@ -865,6 +953,7 @@ class MainActivity : Activity() {
         diagnosticsPanel.visibility = View.GONE
         recommendationsPanel.visibility = View.GONE
         historyPanel.visibility = View.GONE
+        livePanel.visibility = View.GONE
         when (returnScreen) {
             PlaybackReturnScreen.RECOMMENDATIONS -> {
                 recommendationsPanel.visibility = View.VISIBLE
@@ -873,6 +962,10 @@ class MainActivity : Activity() {
             PlaybackReturnScreen.HISTORY -> {
                 historyPanel.visibility = View.VISIBLE
                 historyStatus.text = historySummary()
+            }
+            PlaybackReturnScreen.LIVE -> {
+                livePanel.visibility = View.VISIBLE
+                liveStatus.text = liveSummary()
             }
             PlaybackReturnScreen.DIAGNOSTICS -> diagnosticsPanel.visibility = View.VISIBLE
         }
@@ -891,19 +984,14 @@ class MainActivity : Activity() {
                 historyStatus.text = message
                 restoreHistoryFocus()
             }
+            PlaybackReturnScreen.LIVE -> {
+                liveStatus.text = message
+                restoreLiveFocus()
+            }
             PlaybackReturnScreen.DIAGNOSTICS -> {
                 statusText.append("\n$message")
                 liveButton.requestFocus()
             }
-        }
-    }
-
-    private fun failLiveTest(message: String, error: Throwable? = null) {
-        runOnUiThread {
-            isFetchingStream = false
-            liveButton.isEnabled = true
-            statusText.append("\n$message${error?.message?.let { ": $it" }.orEmpty()}")
-            liveButton.requestFocus()
         }
     }
 
@@ -914,6 +1002,7 @@ class MainActivity : Activity() {
             when (returnScreen) {
                 PlaybackReturnScreen.RECOMMENDATIONS -> restoreRecommendationFocus()
                 PlaybackReturnScreen.HISTORY -> restoreHistoryFocus()
+                PlaybackReturnScreen.LIVE -> restoreLiveFocus()
                 PlaybackReturnScreen.DIAGNOSTICS -> liveButton.requestFocus()
             }
             return true
@@ -930,6 +1019,10 @@ class MainActivity : Activity() {
             hideHistory()
             return true
         }
+        if (keyCode == KeyEvent.KEYCODE_BACK && livePanel.visibility == View.VISIBLE) {
+            hideLiveRooms()
+            return true
+        }
         return super.onKeyDown(keyCode, event)
     }
 
@@ -941,6 +1034,7 @@ class MainActivity : Activity() {
             when (returnScreen) {
                 PlaybackReturnScreen.RECOMMENDATIONS -> restoreRecommendationFocus()
                 PlaybackReturnScreen.HISTORY -> restoreHistoryFocus()
+                PlaybackReturnScreen.LIVE -> restoreLiveFocus()
                 PlaybackReturnScreen.DIAGNOSTICS -> liveButton.requestFocus()
             }
         } else if (loginPanel.visibility == View.VISIBLE) {
@@ -949,6 +1043,8 @@ class MainActivity : Activity() {
             hideRecommendations()
         } else if (historyPanel.visibility == View.VISIBLE) {
             hideHistory()
+        } else if (livePanel.visibility == View.VISIBLE) {
+            hideLiveRooms()
         } else {
             super.onBackPressed()
         }
@@ -959,6 +1055,8 @@ class MainActivity : Activity() {
         accountCall?.cancel()
         recommendationsCall?.cancel()
         historyCall?.cancel()
+        liveRoomsCall?.cancel()
+        liveStreamCall?.cancel()
         videoCall?.cancel()
         coverCalls.forEach(Call::cancel)
         coverCalls.clear()
@@ -967,20 +1065,11 @@ class MainActivity : Activity() {
         super.onDestroy()
     }
 
-    private fun JSONArray.firstLong(key: String): Long? {
-        for (index in 0 until length()) {
-            val value = optJSONObject(index)?.optLong(key, 0L) ?: 0L
-            if (value > 0L) return value
-        }
-        return null
-    }
-
-    private data class StreamCandidate(val rank: Int, val url: String)
-
     private enum class PlaybackReturnScreen {
         DIAGNOSTICS,
         RECOMMENDATIONS,
-        HISTORY
+        HISTORY,
+        LIVE
     }
 
     private companion object {
@@ -989,5 +1078,7 @@ class MainActivity : Activity() {
         const val QR_POLL_INTERVAL_MS = 2_000L
         const val FIRST_HEARTBEAT_DELAY_MS = 5_000L
         const val HEARTBEAT_INTERVAL_MS = 15_000L
+        const val COVER_WIDTH_PX = 640
+        const val COVER_HEIGHT_PX = 360
     }
 }
