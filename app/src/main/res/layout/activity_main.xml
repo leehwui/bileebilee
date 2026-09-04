@@ -66,8 +66,7 @@
                 android:paddingStart="28dp"
                 android:paddingEnd="28dp"
                 android:textColor="@color/tv_button_text"
-                android:text="@string/refresh_diagnostics"
-                android:textAllCaps="false" />
+                android:text="@string/refresh_diagnostics" />
 
             <Button
                 android:id="@+id/live_button"
@@ -81,8 +80,7 @@
                 android:paddingStart="28dp"
                 android:paddingEnd="28dp"
                 android:textColor="@color/tv_button_text"
-                android:text="@string/test_live_stream"
-                android:textAllCaps="false" />
+                android:text="@string/test_live_stream" />
         </LinearLayout>
     </LinearLayout>
 

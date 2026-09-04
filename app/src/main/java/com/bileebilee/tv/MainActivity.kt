@@ -28,7 +28,6 @@ import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
-@UnstableApi
 class MainActivity : Activity() {
     private lateinit var diagnosticsPanel: LinearLayout
     private lateinit var statusText: TextView
@@ -55,6 +54,8 @@ class MainActivity : Activity() {
         focusStatus = findViewById(R.id.focus_status)
         refreshButton = findViewById(R.id.refresh_button)
         liveButton = findViewById(R.id.live_button)
+        refreshButton.isAllCaps = false
+        liveButton.isAllCaps = false
         playerView = findViewById(R.id.player_view)
         playerHint = findViewById(R.id.player_hint)
 
@@ -214,6 +215,7 @@ class MainActivity : Activity() {
         return candidates.minByOrNull(StreamCandidate::rank)?.url
     }
 
+    @androidx.annotation.OptIn(markerClass = [UnstableApi::class])
     private fun play(roomId: Long, url: String) {
         isFetchingStream = false
         liveButton.isEnabled = true
@@ -280,10 +282,18 @@ class MainActivity : Activity() {
         return super.onKeyDown(keyCode, event)
     }
 
+    @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+    override fun onBackPressed() {
+        if (player != null) {
+            stopPlayback()
+            liveButton.requestFocus()
+        } else {
+            super.onBackPressed()
+        }
+    }
+
     override fun onDestroy() {
         stopPlayback()
-        httpClient.dispatcher.executorService.shutdown()
-        httpClient.connectionPool.evictAll()
         super.onDestroy()
     }
 
