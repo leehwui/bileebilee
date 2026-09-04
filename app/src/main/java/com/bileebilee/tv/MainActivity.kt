@@ -64,7 +64,6 @@ class MainActivity : Activity() {
     private lateinit var historyStatus: TextView
     private lateinit var historyScroll: ScrollView
     private lateinit var historyGrid: GridLayout
-    private lateinit var moreHistoryButton: Button
     private lateinit var livePanel: LinearLayout
     private lateinit var liveTitle: TextView
     private lateinit var liveStatus: TextView
@@ -72,14 +71,12 @@ class MainActivity : Activity() {
     private lateinit var liveGrid: GridLayout
     private lateinit var followingLiveButton: Button
     private lateinit var popularLiveButton: Button
-    private lateinit var moreLiveButton: Button
     private lateinit var followingPanel: LinearLayout
     private lateinit var followingTitle: TextView
     private lateinit var followingStatus: TextView
     private lateinit var followingScroll: ScrollView
     private lateinit var followingGrid: GridLayout
     private lateinit var followingBackButton: Button
-    private lateinit var moreFollowingButton: Button
     private lateinit var authClient: BilibiliAuthClient
 
     private val httpClient = OkHttpClient.Builder()
@@ -113,20 +110,27 @@ class MainActivity : Activity() {
     private var followingPage = 0
     private var followingTotal = 0
     private var followingHasMore = false
+    private var followingLoading = false
     private var selectedCreator: BilibiliAuthClient.FollowedCreator? = null
     private var creatorVideoPage = 0
     private var creatorVideoTotal = 0
     private var creatorVideosHaveMore = false
+    private var creatorVideosLoading = false
     private var recommendationReturnFocus: View? = null
     private var recommendationPage = 0
     private var recommendationFeedSignedIn = false
+    private var recommendationsHaveMore = true
+    private var recommendationsLoading = false
     private var historyReturnFocus: View? = null
     private var historyPage = 0
     private var historyHasMore = false
     private var historySkipped = 0
+    private var historyLoading = false
     private var liveReturnFocus: View? = null
     private var livePage = 0
     private var liveSource = BilibiliAuthClient.LiveSource.FOLLOWING
+    private var liveHasMore = false
+    private var liveLoading = false
     private var playbackHeartbeatCall: Call? = null
     private var activePlaybackTracking: BilibiliAuthClient.PlaybackTracking? = null
     private var playbackStartedAt = 0L
@@ -172,7 +176,6 @@ class MainActivity : Activity() {
         historyStatus = findViewById(R.id.history_status)
         historyScroll = findViewById(R.id.history_scroll)
         historyGrid = findViewById(R.id.history_grid)
-        moreHistoryButton = findViewById(R.id.more_history_button)
         livePanel = findViewById(R.id.live_panel)
         liveTitle = findViewById(R.id.live_title)
         liveStatus = findViewById(R.id.live_status)
@@ -180,14 +183,12 @@ class MainActivity : Activity() {
         liveGrid = findViewById(R.id.live_grid)
         followingLiveButton = findViewById(R.id.following_live_button)
         popularLiveButton = findViewById(R.id.popular_live_button)
-        moreLiveButton = findViewById(R.id.more_live_button)
         followingPanel = findViewById(R.id.following_panel)
         followingTitle = findViewById(R.id.following_title)
         followingStatus = findViewById(R.id.following_status)
         followingScroll = findViewById(R.id.following_scroll)
         followingGrid = findViewById(R.id.following_grid)
         followingBackButton = findViewById(R.id.following_back_button)
-        moreFollowingButton = findViewById(R.id.more_following_button)
         recommendationsButton.isAllCaps = false
         historyButton.isAllCaps = false
         liveButton.isAllCaps = false
@@ -203,27 +204,19 @@ class MainActivity : Activity() {
         loginButton.setOnClickListener { showAccount() }
         followingAccountsButton.setOnClickListener { showFollowingCreators(reset = true) }
         newQrButton.setOnClickListener { startQrLogin() }
-        refreshRecommendationsButton.setOnClickListener { loadRecommendations() }
-        moreHistoryButton.setOnClickListener { loadHistory() }
+        refreshRecommendationsButton.setOnClickListener { refreshRecommendations() }
         followingLiveButton.setOnClickListener {
             selectLiveSource(BilibiliAuthClient.LiveSource.FOLLOWING)
         }
         popularLiveButton.setOnClickListener {
             selectLiveSource(BilibiliAuthClient.LiveSource.POPULAR)
         }
-        moreLiveButton.setOnClickListener { loadLiveRooms() }
         followingBackButton.setOnClickListener { showFollowingCreators(reset = false) }
-        moreFollowingButton.setOnClickListener {
-            if (followingMode == FollowingMode.CREATORS) loadFollowingCreators() else loadCreatorVideos()
-        }
         refreshRecommendationsButton.isAllCaps = false
-        moreHistoryButton.isAllCaps = false
         followingLiveButton.isAllCaps = false
         popularLiveButton.isAllCaps = false
-        moreLiveButton.isAllCaps = false
         followingAccountsButton.isAllCaps = false
         followingBackButton.isAllCaps = false
-        moreFollowingButton.isAllCaps = false
         installNavigationTab(recommendationsButton, BrowseScreen.RECOMMENDATIONS)
         installNavigationTab(historyButton, BrowseScreen.HISTORY)
         installNavigationTab(liveButton, BrowseScreen.LIVE)
@@ -231,7 +224,6 @@ class MainActivity : Activity() {
         installFocusFeedback(newQrButton)
         installFocusFeedback(followingAccountsButton)
         installFocusFeedback(followingBackButton)
-        installFocusFeedback(moreFollowingButton)
 
         checkAccount()
         showRecommendations(focusContent = false)
@@ -297,6 +289,18 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun refreshRecommendations() {
+        recommendationsCall?.cancel()
+        recommendationsLoading = false
+        recommendationsHaveMore = true
+        recommendationPage = 0
+        recommendationReturnFocus = null
+        authClient.resetRecommendations()
+        recommendationsGrid.removeAllViews()
+        recommendationsScroll.scrollTo(0, 0)
+        loadRecommendations()
+    }
+
     private fun showHistory(focusContent: Boolean = true) {
         leaveAccountIfNeeded()
         recommendationsPanel.visibility = View.GONE
@@ -308,6 +312,10 @@ class MainActivity : Activity() {
         updateNavigation(historyButton)
         if (historyGrid.childCount == 0) {
             authClient.resetHistory()
+            historyPage = 0
+            historyHasMore = true
+            historySkipped = 0
+            historyLoading = false
             loadHistory()
         } else {
             historyStatus.text = historySummary()
@@ -358,9 +366,13 @@ class MainActivity : Activity() {
 
     private fun selectLiveSource(source: BilibiliAuthClient.LiveSource) {
         liveRoomsCall?.cancel()
+        liveLoading = false
         liveSource = source
         livePage = 0
+        liveHasMore = true
         liveReturnFocus = null
+        liveGrid.removeAllViews()
+        liveScroll.scrollTo(0, 0)
         authClient.resetLiveRooms(source)
         liveTitle.text = getString(
             if (source == BilibiliAuthClient.LiveSource.FOLLOWING) {
@@ -384,24 +396,32 @@ class MainActivity : Activity() {
     }
 
     private fun loadLiveRooms() {
-        liveRoomsCall?.cancel()
+        if (liveLoading || (livePage > 0 && !liveHasMore)) return
+        liveLoading = true
         val source = liveSource
-        liveStatus.text = if (source == BilibiliAuthClient.LiveSource.FOLLOWING) {
+        val firstPage = livePage == 0
+        liveStatus.text = if (!firstPage) {
+            "Loading more live rooms…"
+        } else if (source == BilibiliAuthClient.LiveSource.FOLLOWING) {
             "Loading followed live rooms…"
         } else {
             "Loading popular live rooms…"
         }
-        moreLiveButton.isEnabled = false
-        liveRoomsCall = authClient.fetchLiveRooms(source) { result ->
+        lateinit var requestCall: Call
+        requestCall = authClient.fetchLiveRooms(source) { result ->
             runOnUiThread {
+                if (liveRoomsCall !== requestCall) return@runOnUiThread
                 if (source != liveSource || livePanel.visibility != View.VISIBLE) {
+                    liveLoading = false
                     return@runOnUiThread
                 }
                 result.fold(
                     onSuccess = { page ->
                         livePage = page.page
-                        renderLiveRooms(page.rooms)
-                        liveStatus.text = if (page.rooms.isEmpty()) {
+                        liveHasMore = page.hasMore
+                        renderLiveRooms(page.rooms, append = !firstPage)
+                        liveLoading = false
+                        liveStatus.text = if (liveGrid.childCount == 0) {
                             if (source == BilibiliAuthClient.LiveSource.FOLLOWING) {
                                 "None of the accounts you follow are live right now."
                             } else {
@@ -410,30 +430,34 @@ class MainActivity : Activity() {
                         } else {
                             liveSummary()
                         }
-                        moreLiveButton.isEnabled = page.hasMore
-                        if (page.rooms.isNotEmpty() && !navigationHasFocus()) {
+                        if (firstPage && page.rooms.isNotEmpty() && !navigationHasFocus()) {
                             liveGrid.post { liveGrid.getChildAt(0)?.requestFocus() }
-                        } else if (!navigationHasFocus()) {
+                        } else if (firstPage && !navigationHasFocus()) {
                             selectedLiveSourceButton().requestFocus()
                         }
                     },
                     onFailure = { error ->
+                        liveLoading = false
                         liveStatus.text = "Live-room request failed: ${error.message.orEmpty()}"
-                        moreLiveButton.isEnabled = false
-                        if (!navigationHasFocus()) selectedLiveSourceButton().requestFocus()
+                        if (firstPage && !navigationHasFocus()) selectedLiveSourceButton().requestFocus()
                     }
                 )
             }
         }
+        liveRoomsCall = requestCall
     }
 
-    private fun renderLiveRooms(rooms: List<BilibiliAuthClient.LiveRoom>) {
-        coverCalls.forEach(Call::cancel)
-        coverCalls.clear()
-        liveGrid.removeAllViews()
-        liveReturnFocus = null
+    private fun renderLiveRooms(rooms: List<BilibiliAuthClient.LiveRoom>, append: Boolean) {
+        if (!append) {
+            coverCalls.forEach(Call::cancel)
+            coverCalls.clear()
+            liveGrid.removeAllViews()
+            liveReturnFocus = null
+        }
+        val startIndex = liveGrid.childCount
         val cardWidth = gridCardWidth()
-        rooms.forEachIndexed { index, room ->
+        rooms.forEachIndexed { pageIndex, room ->
+            val index = startIndex + pageIndex
             val card = LayoutInflater.from(this)
                 .inflate(R.layout.recommendation_card, liveGrid, false)
             card.id = View.generateViewId()
@@ -441,7 +465,6 @@ class MainActivity : Activity() {
                 card.nextFocusUpId = when (index) {
                     1 -> R.id.following_live_button
                     2 -> R.id.popular_live_button
-                    3 -> R.id.more_live_button
                     else -> R.id.live_button
                 }
             }
@@ -470,6 +493,9 @@ class MainActivity : Activity() {
                 if (hasFocus) {
                     liveReturnFocus = view
                     snapGridToFocusedRow(liveScroll, liveGrid, index)
+                    if (shouldPrefetch(index, liveGrid.childCount) && liveHasMore) {
+                        loadLiveRooms()
+                    }
                 }
                 view.animate()
                     .scaleX(if (hasFocus) 1.055f else 1f)
@@ -500,7 +526,7 @@ class MainActivity : Activity() {
     private fun liveSummary(): String =
         "${liveGrid.childCount} live • " +
             "${if (liveSource == BilibiliAuthClient.LiveSource.FOLLOWING) "Following" else "Popular"} " +
-            "• Page $livePage"
+            "• Page $livePage" + if (liveHasMore) " • Scroll for more" else ""
 
     private fun selectedLiveSourceButton(): Button =
         if (liveSource == BilibiliAuthClient.LiveSource.FOLLOWING) {
@@ -540,56 +566,69 @@ class MainActivity : Activity() {
     }
 
     private fun loadHistory() {
-        historyCall?.cancel()
-        historyStatus.text = "Loading account watch history…"
-        moreHistoryButton.isEnabled = false
-        historyCall = authClient.fetchHistory { result ->
+        if (historyLoading || (historyPage > 0 && !historyHasMore)) return
+        historyLoading = true
+        val firstPage = historyPage == 0
+        historyStatus.text = if (firstPage) {
+            "Loading account watch history…"
+        } else {
+            "Loading more watch history…"
+        }
+        lateinit var requestCall: Call
+        requestCall = authClient.fetchHistory { result ->
             runOnUiThread {
+                if (historyCall !== requestCall) return@runOnUiThread
+                if (historyPanel.visibility != View.VISIBLE) {
+                    historyLoading = false
+                    return@runOnUiThread
+                }
                 result.fold(
                     onSuccess = { page ->
                         historyPage = page.page
                         historyHasMore = page.hasMore
-                        historySkipped = page.returnedCount - page.items.size
-                        renderHistory(page.items)
-                        historyStatus.text = if (page.items.isEmpty()) {
-                            if (page.returnedCount == 0) "No more watch history." else
-                                "This page has no playable video entries."
+                        historySkipped += page.returnedCount - page.items.size
+                        renderHistory(page.items, append = !firstPage)
+                        historyLoading = false
+                        historyStatus.text = if (historyGrid.childCount == 0) {
+                            if (!page.hasMore) "No playable watch history was returned." else
+                                "Looking for playable history entries…"
                         } else {
                             historySummary()
                         }
-                        moreHistoryButton.isEnabled = page.hasMore
-                        if (page.items.isNotEmpty() && !navigationHasFocus()) {
+                        if (firstPage && page.items.isNotEmpty() && !navigationHasFocus()) {
                             historyGrid.post { historyGrid.getChildAt(0)?.requestFocus() }
-                        } else if (!navigationHasFocus()) {
-                            moreHistoryButton.requestFocus()
+                        }
+                        if (page.items.isEmpty() && page.hasMore) {
+                            historyGrid.post { loadHistory() }
                         }
                     },
                     onFailure = { error ->
+                        historyLoading = false
                         historyStatus.text = "History request failed: ${error.message.orEmpty()}"
-                        moreHistoryButton.isEnabled = true
-                        if (!navigationHasFocus()) moreHistoryButton.requestFocus()
+                        if (firstPage && !navigationHasFocus()) historyButton.requestFocus()
                     }
                 )
             }
         }
+        historyCall = requestCall
     }
 
-    private fun renderHistory(items: List<BilibiliAuthClient.HistoryItem>) {
-        coverCalls.forEach(Call::cancel)
-        coverCalls.clear()
-        historyGrid.removeAllViews()
-        historyReturnFocus = null
+    private fun renderHistory(items: List<BilibiliAuthClient.HistoryItem>, append: Boolean) {
+        if (!append) {
+            coverCalls.forEach(Call::cancel)
+            coverCalls.clear()
+            historyGrid.removeAllViews()
+            historyReturnFocus = null
+        }
+        val startIndex = historyGrid.childCount
         val cardWidth = gridCardWidth()
-        items.forEachIndexed { index, item ->
+        items.forEachIndexed { pageIndex, item ->
+            val index = startIndex + pageIndex
             val card = LayoutInflater.from(this)
                 .inflate(R.layout.recommendation_card, historyGrid, false)
             card.id = View.generateViewId()
             if (index < GRID_COLUMN_COUNT) {
-                card.nextFocusUpId = if (index == GRID_COLUMN_COUNT - 1) {
-                    R.id.more_history_button
-                } else {
-                    R.id.history_button
-                }
+                card.nextFocusUpId = R.id.history_button
             }
             if (index == 0) historyButton.nextFocusDownId = card.id
             val cover = card.findViewById<ImageView>(R.id.recommendation_cover)
@@ -616,6 +655,9 @@ class MainActivity : Activity() {
                 if (hasFocus) {
                     historyReturnFocus = view
                     snapGridToFocusedRow(historyScroll, historyGrid, index)
+                    if (shouldPrefetch(index, historyGrid.childCount) && historyHasMore) {
+                        loadHistory()
+                    }
                 }
                 view.animate()
                     .scaleX(if (hasFocus) 1.055f else 1f)
@@ -662,7 +704,7 @@ class MainActivity : Activity() {
 
     private fun historySummary(): String {
         val skipped = if (historySkipped > 0) " • $historySkipped unsupported" else ""
-        val more = if (historyHasMore) " • More available" else ""
+        val more = if (historyHasMore) " • Scroll for more" else ""
         return "${historyGrid.childCount} playable • Page $historyPage$skipped$more"
     }
 
@@ -711,43 +753,69 @@ class MainActivity : Activity() {
     }
 
     private fun loadRecommendations() {
-        recommendationsCall?.cancel()
-        recommendationsStatus.text = "Loading the mobile recommendation feed…"
+        if (recommendationsLoading || (recommendationPage > 0 && !recommendationsHaveMore)) return
+        recommendationsLoading = true
+        val firstPage = recommendationPage == 0
+        recommendationsStatus.text = if (firstPage) {
+            "Loading the mobile recommendation feed…"
+        } else {
+            "Loading more recommendations…"
+        }
         refreshRecommendationsButton.isEnabled = false
-        recommendationsCall = authClient.fetchRecommendations { result ->
+        lateinit var requestCall: Call
+        requestCall = authClient.fetchRecommendations { result ->
             runOnUiThread {
+                if (recommendationsCall !== requestCall) return@runOnUiThread
                 refreshRecommendationsButton.isEnabled = true
                 result.fold(
                     onSuccess = { page ->
                         recommendationPage = page.page
                         recommendationFeedSignedIn = page.signedIn
-                        renderRecommendations(page.videos)
-                        recommendationsStatus.text = if (page.videos.isEmpty()) {
+                        recommendationsHaveMore = page.hasMore
+                        renderRecommendations(page.videos, append = !firstPage)
+                        recommendationsLoading = false
+                        recommendationsStatus.text = if (recommendationsGrid.childCount == 0) {
                             "No playable videos were returned."
                         } else {
                             recommendationSummary()
                         }
-                        if (page.videos.isNotEmpty() && !navigationHasFocus()) {
+                        if (firstPage && page.videos.isNotEmpty() && !navigationHasFocus() &&
+                            recommendationsPanel.visibility == View.VISIBLE
+                        ) {
                             recommendationsGrid.post { recommendationsGrid.getChildAt(0)?.requestFocus() }
+                        }
+                        if (page.videos.isEmpty() && page.hasMore) {
+                            recommendationsGrid.post { loadRecommendations() }
                         }
                     },
                     onFailure = { error ->
+                        recommendationsLoading = false
                         recommendationsStatus.text =
                             "Recommendation request failed: ${error.message.orEmpty()}"
-                        if (!navigationHasFocus()) refreshRecommendationsButton.requestFocus()
+                        if (!navigationHasFocus() && recommendationsPanel.visibility == View.VISIBLE) {
+                            refreshRecommendationsButton.requestFocus()
+                        }
                     }
                 )
             }
         }
+        recommendationsCall = requestCall
     }
 
-    private fun renderRecommendations(videos: List<BilibiliAuthClient.Recommendation>) {
-        coverCalls.forEach(Call::cancel)
-        coverCalls.clear()
-        recommendationsGrid.removeAllViews()
-        recommendationReturnFocus = null
+    private fun renderRecommendations(
+        videos: List<BilibiliAuthClient.Recommendation>,
+        append: Boolean
+    ) {
+        if (!append) {
+            coverCalls.forEach(Call::cancel)
+            coverCalls.clear()
+            recommendationsGrid.removeAllViews()
+            recommendationReturnFocus = null
+        }
+        val startIndex = recommendationsGrid.childCount
         val cardWidth = gridCardWidth()
-        videos.forEachIndexed { index, video ->
+        videos.forEachIndexed { pageIndex, video ->
+            val index = startIndex + pageIndex
             val card = LayoutInflater.from(this)
                 .inflate(R.layout.recommendation_card, recommendationsGrid, false)
             card.id = View.generateViewId()
@@ -777,6 +845,11 @@ class MainActivity : Activity() {
                 if (hasFocus) {
                     recommendationReturnFocus = view
                     snapGridToFocusedRow(recommendationsScroll, recommendationsGrid, index)
+                    if (shouldPrefetch(index, recommendationsGrid.childCount) &&
+                        recommendationsHaveMore
+                    ) {
+                        loadRecommendations()
+                    }
                 }
                 view.animate()
                     .scaleX(if (hasFocus) 1.055f else 1f)
@@ -880,10 +953,14 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun shouldPrefetch(focusedIndex: Int, loadedItemCount: Int): Boolean =
+        loadedItemCount > 0 && focusedIndex >= loadedItemCount - PAGINATION_PREFETCH_ITEMS
+
     private fun recommendationSummary(): String {
         val session = if (recommendationFeedSignedIn) "signed in" else "guest"
+        val more = if (recommendationsHaveMore) " • Scroll for more" else ""
         return "${recommendationsGrid.childCount} videos • Mobile $session • " +
-            "Page $recommendationPage • Press OK to play"
+            "Page $recommendationPage$more • Press OK to play"
     }
 
     private fun restoreRecommendationFocus() {
@@ -933,76 +1010,97 @@ class MainActivity : Activity() {
         followingMode = FollowingMode.CREATORS
         followingTitle.text = getString(R.string.following_accounts_title)
         followingBackButton.visibility = View.GONE
-        moreFollowingButton.text = getString(R.string.more_following)
         if (reset || followedCreators.isEmpty()) {
+            followingCall?.cancel()
+            followingLoading = false
             authClient.resetFollowing()
             followingPage = 0
             followingTotal = 0
-            followingHasMore = false
+            followingHasMore = true
             followedCreatorFocusIndex = 0
+            followedCreators = emptyList()
             followingGrid.removeAllViews()
             followingScroll.scrollTo(0, 0)
             loadFollowingCreators(account.mid)
         } else {
-            renderFollowedCreators(followedCreators)
+            renderFollowedCreators(followedCreators, append = false)
             followingStatus.text = followingCreatorsSummary()
-            moreFollowingButton.isEnabled = followingHasMore
             restoreFollowingFocus(followedCreatorFocusIndex)
         }
     }
 
     private fun loadFollowingCreators(accountId: Long? = currentAccount?.mid) {
         val resolvedAccountId = accountId ?: return
-        followingCall?.cancel()
-        followingStatus.text = "Loading followed creators…"
-        moreFollowingButton.isEnabled = false
-        followingCall = authClient.fetchFollowing(resolvedAccountId) { result ->
+        if (followingLoading || (followingPage > 0 && !followingHasMore)) return
+        followingLoading = true
+        val firstPage = followingPage == 0
+        followingStatus.text = if (firstPage) {
+            "Loading followed creators…"
+        } else {
+            "Loading more followed creators…"
+        }
+        lateinit var requestCall: Call
+        requestCall = authClient.fetchFollowing(resolvedAccountId) { result ->
             runOnUiThread {
+                if (followingCall !== requestCall) return@runOnUiThread
                 if (followingMode != FollowingMode.CREATORS ||
                     followingPanel.visibility != View.VISIBLE
-                ) return@runOnUiThread
+                ) {
+                    followingLoading = false
+                    return@runOnUiThread
+                }
                 result.fold(
                     onSuccess = { page ->
-                        followedCreators = page.creators
+                        followedCreators = if (firstPage) {
+                            page.creators
+                        } else {
+                            followedCreators + page.creators
+                        }
                         followingPage = page.page
                         followingTotal = page.total
                         followingHasMore = page.hasMore
-                        followedCreatorFocusIndex = 0
-                        renderFollowedCreators(page.creators)
-                        followingStatus.text = if (page.creators.isEmpty()) {
+                        renderFollowedCreators(page.creators, append = !firstPage)
+                        followingLoading = false
+                        followingStatus.text = if (followingGrid.childCount == 0) {
                             "No followed creators were returned."
                         } else {
                             followingCreatorsSummary()
                         }
-                        moreFollowingButton.isEnabled = page.hasMore
-                        restoreFollowingFocus(0)
+                        if (firstPage) {
+                            followedCreatorFocusIndex = 0
+                            restoreFollowingFocus(0)
+                        }
                     },
                     onFailure = { error ->
+                        followingLoading = false
                         followingStatus.text =
                             "Following request failed: ${error.message.orEmpty()}"
-                        moreFollowingButton.isEnabled = true
-                        moreFollowingButton.requestFocus()
+                        if (firstPage && !navigationHasFocus()) loginButton.requestFocus()
                     }
                 )
             }
         }
+        followingCall = requestCall
     }
 
-    private fun renderFollowedCreators(creators: List<BilibiliAuthClient.FollowedCreator>) {
-        coverCalls.forEach(Call::cancel)
-        coverCalls.clear()
-        followingGrid.removeAllViews()
+    private fun renderFollowedCreators(
+        creators: List<BilibiliAuthClient.FollowedCreator>,
+        append: Boolean
+    ) {
+        if (!append) {
+            coverCalls.forEach(Call::cancel)
+            coverCalls.clear()
+            followingGrid.removeAllViews()
+        }
+        val startIndex = followingGrid.childCount
         val cardWidth = gridCardWidth()
-        creators.forEachIndexed { index, creator ->
+        creators.forEachIndexed { pageIndex, creator ->
+            val index = startIndex + pageIndex
             val card = LayoutInflater.from(this)
                 .inflate(R.layout.recommendation_card, followingGrid, false)
             card.id = View.generateViewId()
             if (index < GRID_COLUMN_COUNT) {
-                card.nextFocusUpId = if (index == GRID_COLUMN_COUNT - 1) {
-                    R.id.more_following_button
-                } else {
-                    R.id.login_button
-                }
+                card.nextFocusUpId = R.id.login_button
             }
             if (index == 0) loginButton.nextFocusDownId = card.id
             val avatar = card.findViewById<ImageView>(R.id.recommendation_cover)
@@ -1024,6 +1122,9 @@ class MainActivity : Activity() {
                     followedCreatorFocusIndex = index
                     followingReturnFocus = view
                     snapGridToFocusedRow(followingScroll, followingGrid, index)
+                    if (shouldPrefetch(index, followingGrid.childCount) && followingHasMore) {
+                        loadFollowingCreators()
+                    }
                 }
                 view.animate()
                     .scaleX(if (hasFocus) 1.055f else 1f)
@@ -1057,77 +1158,97 @@ class MainActivity : Activity() {
         loginPanel.visibility = View.GONE
         followingTitle.text = creator.name
         followingBackButton.visibility = View.VISIBLE
-        moreFollowingButton.text = getString(R.string.more_creator_videos)
         if (reset || creatorVideos.isEmpty()) {
+            creatorVideosCall?.cancel()
+            creatorVideosLoading = false
             creatorVideoPage = 0
             creatorVideoTotal = 0
-            creatorVideosHaveMore = false
+            creatorVideosHaveMore = true
             creatorVideoFocusIndex = 0
             creatorVideos = emptyList()
             followingGrid.removeAllViews()
             followingScroll.scrollTo(0, 0)
             loadCreatorVideos()
         } else {
-            renderCreatorVideos(creatorVideos)
+            renderCreatorVideos(creatorVideos, append = false)
             followingStatus.text = creatorVideosSummary()
-            moreFollowingButton.isEnabled = creatorVideosHaveMore
             restoreFollowingFocus(creatorVideoFocusIndex)
         }
     }
 
     private fun loadCreatorVideos() {
         val creator = selectedCreator ?: return
-        creatorVideosCall?.cancel()
+        if (creatorVideosLoading || (creatorVideoPage > 0 && !creatorVideosHaveMore)) return
+        creatorVideosLoading = true
+        val firstPage = creatorVideoPage == 0
         val requestedPage = creatorVideoPage + 1
-        followingStatus.text = "Loading recent videos…"
-        moreFollowingButton.isEnabled = false
-        creatorVideosCall = authClient.fetchCreatorVideos(creator, requestedPage) { result ->
+        followingStatus.text = if (firstPage) {
+            "Loading recent videos…"
+        } else {
+            "Loading more recent videos…"
+        }
+        lateinit var requestCall: Call
+        requestCall = authClient.fetchCreatorVideos(creator, requestedPage) { result ->
             runOnUiThread {
+                if (creatorVideosCall !== requestCall) return@runOnUiThread
                 if (followingMode != FollowingMode.VIDEOS || selectedCreator != creator ||
                     followingPanel.visibility != View.VISIBLE
-                ) return@runOnUiThread
+                ) {
+                    creatorVideosLoading = false
+                    return@runOnUiThread
+                }
                 result.fold(
                     onSuccess = { page ->
-                        creatorVideos = page.videos
+                        creatorVideos = if (firstPage) {
+                            page.videos
+                        } else {
+                            creatorVideos + page.videos
+                        }
                         creatorVideoPage = page.page
                         creatorVideoTotal = page.total
                         creatorVideosHaveMore = page.hasMore
-                        creatorVideoFocusIndex = 0
-                        renderCreatorVideos(page.videos)
-                        followingStatus.text = if (page.videos.isEmpty()) {
+                        renderCreatorVideos(page.videos, append = !firstPage)
+                        creatorVideosLoading = false
+                        followingStatus.text = if (followingGrid.childCount == 0) {
                             "No public videos were returned for this creator."
                         } else {
                             creatorVideosSummary()
                         }
-                        moreFollowingButton.isEnabled = page.hasMore
-                        restoreFollowingFocus(0)
+                        if (firstPage) {
+                            creatorVideoFocusIndex = 0
+                            restoreFollowingFocus(0)
+                        }
                     },
                     onFailure = { error ->
+                        creatorVideosLoading = false
                         followingStatus.text =
                             "Creator-video request failed: ${error.message.orEmpty()}"
-                        moreFollowingButton.isEnabled = true
-                        moreFollowingButton.requestFocus()
+                        if (firstPage && !navigationHasFocus()) followingBackButton.requestFocus()
                     }
                 )
             }
         }
+        creatorVideosCall = requestCall
     }
 
-    private fun renderCreatorVideos(videos: List<BilibiliAuthClient.CreatorVideo>) {
-        coverCalls.forEach(Call::cancel)
-        coverCalls.clear()
-        followingGrid.removeAllViews()
+    private fun renderCreatorVideos(
+        videos: List<BilibiliAuthClient.CreatorVideo>,
+        append: Boolean
+    ) {
+        if (!append) {
+            coverCalls.forEach(Call::cancel)
+            coverCalls.clear()
+            followingGrid.removeAllViews()
+        }
+        val startIndex = followingGrid.childCount
         val cardWidth = gridCardWidth()
-        videos.forEachIndexed { index, video ->
+        videos.forEachIndexed { pageIndex, video ->
+            val index = startIndex + pageIndex
             val card = LayoutInflater.from(this)
                 .inflate(R.layout.recommendation_card, followingGrid, false)
             card.id = View.generateViewId()
             if (index < GRID_COLUMN_COUNT) {
-                card.nextFocusUpId = when (index) {
-                    2 -> R.id.following_back_button
-                    3 -> R.id.more_following_button
-                    else -> R.id.login_button
-                }
+                card.nextFocusUpId = R.id.following_back_button
             }
             if (index == 0) loginButton.nextFocusDownId = card.id
             val cover = card.findViewById<ImageView>(R.id.recommendation_cover)
@@ -1150,6 +1271,11 @@ class MainActivity : Activity() {
                     creatorVideoFocusIndex = index
                     followingReturnFocus = view
                     snapGridToFocusedRow(followingScroll, followingGrid, index)
+                    if (shouldPrefetch(index, followingGrid.childCount) &&
+                        creatorVideosHaveMore
+                    ) {
+                        loadCreatorVideos()
+                    }
                 }
                 view.animate()
                     .scaleX(if (hasFocus) 1.055f else 1f)
@@ -1198,10 +1324,12 @@ class MainActivity : Activity() {
     }
 
     private fun followingCreatorsSummary(): String =
-        "${followedCreators.size} creators • Page $followingPage • $followingTotal total"
+        "${followedCreators.size} creators loaded • Page $followingPage • $followingTotal total" +
+            if (followingHasMore) " • Scroll for more" else ""
 
     private fun creatorVideosSummary(): String =
-        "${creatorVideos.size} videos • Page $creatorVideoPage • $creatorVideoTotal total"
+        "${creatorVideos.size} videos loaded • Page $creatorVideoPage • $creatorVideoTotal total" +
+            if (creatorVideosHaveMore) " • Scroll for more" else ""
 
     private fun restoreFollowingFocus(index: Int) {
         followingGrid.post {
@@ -1673,6 +1801,7 @@ class MainActivity : Activity() {
         const val COVER_HEIGHT_PX = 360
         const val GRID_SIDE_PADDING_DP = 72
         const val GRID_COLUMN_COUNT = 4
+        const val PAGINATION_PREFETCH_ITEMS = GRID_COLUMN_COUNT * 2
         const val CARD_MARGIN_DP = 6
     }
 }

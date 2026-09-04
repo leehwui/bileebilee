@@ -8,13 +8,11 @@
     <string name="popular_live_title">Popular live rooms</string>
     <string name="following">Following</string>
     <string name="popular">Popular</string>
-    <string name="more_live_rooms">More rooms</string>
     <string name="recommendations">Recommendations</string>
     <string name="recommendations_title">Recommended for you</string>
     <string name="refresh_recommendations">Refresh recommendations</string>
     <string name="history">History</string>
     <string name="history_title">Watch history</string>
-    <string name="more_history">More history</string>
     <string name="qr_login">Sign in with QR code</string>
     <string name="new_qr_code">Generate a new QR code</string>
     <string name="qr_login_title">Sign in to Bilibili</string>
@@ -26,8 +24,6 @@
     <string name="view_following">Following</string>
     <string name="following_accounts_title">Following</string>
     <string name="back_to_following">All creators</string>
-    <string name="more_following">More creators</string>
-    <string name="more_creator_videos">More videos</string>
     <string name="following_player_hint">Press Back to return to creator videos.</string>
     <string name="player_hint">Press Back to stop playback and return home.</string>
     <string name="video_player_hint">Press Back to return to recommendations.</string>

@@ -52,17 +52,6 @@
                     android:textSize="14sp" />
             </LinearLayout>
 
-            <Button
-                android:id="@+id/more_history_button"
-                android:layout_width="wrap_content"
-                android:layout_height="46dp"
-                android:background="@drawable/tv_button_background"
-                android:focusable="true"
-                android:minWidth="190dp"
-                android:paddingStart="20dp"
-                android:paddingEnd="20dp"
-                android:text="@string/more_history"
-                android:textColor="@color/tv_button_text" />
         </LinearLayout>
 
         <ScrollView
@@ -153,22 +142,7 @@
                     android:focusable="true"
                     android:minWidth="145dp"
                     android:nextFocusLeft="@id/following_live_button"
-                    android:nextFocusRight="@id/more_live_button"
                     android:text="@string/popular"
-                    android:textColor="@color/tv_button_text" />
-
-                <Button
-                    android:id="@+id/more_live_button"
-                    android:layout_width="wrap_content"
-                    android:layout_height="46dp"
-                    android:layout_marginStart="10dp"
-                    android:background="@drawable/tv_button_background"
-                    android:focusable="true"
-                    android:minWidth="165dp"
-                    android:nextFocusLeft="@id/popular_live_button"
-                    android:paddingStart="20dp"
-                    android:paddingEnd="20dp"
-                    android:text="@string/more_live_rooms"
                     android:textColor="@color/tv_button_text" />
             </LinearLayout>
         </LinearLayout>
@@ -335,16 +309,6 @@
                 android:textColor="@color/tv_button_text"
                 android:visibility="gone" />
 
-            <Button
-                android:id="@+id/more_following_button"
-                android:layout_width="wrap_content"
-                android:layout_height="46dp"
-                android:layout_marginStart="10dp"
-                android:background="@drawable/tv_button_background"
-                android:focusable="true"
-                android:minWidth="180dp"
-                android:text="@string/more_following"
-                android:textColor="@color/tv_button_text" />
         </LinearLayout>
 
         <ScrollView

@@ -239,6 +239,11 @@ class BilibiliAuthClient(
         }
     }
 
+    fun resetRecommendations() {
+        feedCursor = 0L
+        feedPage = 0
+    }
+
     fun fetchRecommendations(callback: (Result<RecommendationPage>) -> Unit): Call {
         val initialRequest = feedCursor == 0L
         val statistics = JSONObject()
@@ -306,13 +311,15 @@ class BilibiliAuthClient(
                         )
                     )
                 }
-            }.take(20)
+            }.take(RECOMMENDATION_PAGE_SIZE)
+            val hasMore = items.length() > 0 && nextCursor > 0L && nextCursor != feedCursor
             if (nextCursor > 0L) feedCursor = nextCursor
             feedPage += 1
             RecommendationPage(
                 videos = videos,
                 page = feedPage,
-                signedIn = cookieHeader().isNotBlank()
+                signedIn = cookieHeader().isNotBlank(),
+                hasMore = hasMore
             )
         }
     }
@@ -441,7 +448,7 @@ class BilibiliAuthClient(
             .addQueryParameter("max", historyCursorMax.toString())
             .addQueryParameter("view_at", historyCursorViewAt.toString())
             .addQueryParameter("business", historyCursorBusiness)
-            .addQueryParameter("ps", "20")
+            .addQueryParameter("ps", HISTORY_PAGE_SIZE.toString())
             .build()
         val request = authenticatedRequest(url.toString()).build()
         return enqueueJson(request, callback) { root ->
@@ -770,7 +777,8 @@ class BilibiliAuthClient(
     data class RecommendationPage(
         val videos: List<Recommendation>,
         val page: Int,
-        val signedIn: Boolean
+        val signedIn: Boolean,
+        val hasMore: Boolean
     )
     data class LiveRoom(
         val roomId: Long,
@@ -847,6 +855,8 @@ class BilibiliAuthClient(
         private const val ANDROID_BUILD = "8290300"
         private const val ANDROID_APP_VERSION = "8.29.0"
         private const val LIVE_PAGE_SIZE = 20
+        private const val RECOMMENDATION_PAGE_SIZE = 20
+        private const val HISTORY_PAGE_SIZE = 20
         private const val FOLLOWING_PAGE_SIZE = 20
         private const val CREATOR_VIDEO_PAGE_SIZE = 20
         private const val USER_AGENT =
