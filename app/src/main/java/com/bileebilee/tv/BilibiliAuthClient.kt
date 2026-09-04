@@ -12,6 +12,8 @@ import okhttp3.Response
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
+import java.net.URLEncoder
+import java.security.MessageDigest
 import java.util.UUID
 
 class BilibiliAuthClient(
@@ -34,6 +36,8 @@ class BilibiliAuthClient(
     private var historyPage = 0
     private var popularLivePage = 0
     private var followedLivePage = 0
+    private var followingPage = 0
+    private var wbiMixinKey = ""
 
     fun generateQr(callback: (Result<QrChallenge>) -> Unit): Call {
         val request = Request.Builder()
@@ -105,12 +109,133 @@ class BilibiliAuthClient(
         return enqueueJson(request, callback) { root ->
             requireApiSuccess(root)
             val data = root.getJSONObject("data")
+            updateWbiMixinKey(data.optJSONObject("wbi_img"))
             if (!data.optBoolean("isLogin")) {
                 clearSession()
                 null
             } else {
                 Account(data.getLong("mid"), data.getString("uname"))
             }
+        }
+    }
+
+    fun resetFollowing() {
+        followingPage = 0
+    }
+
+    fun fetchFollowing(accountId: Long, callback: (Result<FollowingPage>) -> Unit): Call {
+        if (cookieHeader().isBlank()) error("Sign in to view followed accounts")
+        val requestedPage = followingPage + 1
+        val url = FOLLOWING_URL.toHttpUrl().newBuilder()
+            .addQueryParameter("vmid", accountId.toString())
+            .addQueryParameter("pn", requestedPage.toString())
+            .addQueryParameter("ps", FOLLOWING_PAGE_SIZE.toString())
+            .addQueryParameter("order", "desc")
+            .addQueryParameter("order_type", "attention")
+            .build()
+        val request = authenticatedRequest(url.toString()).build()
+        return enqueueJson(request, callback) { root ->
+            requireApiSuccess(root)
+            val data = root.getJSONObject("data")
+            val list = data.optJSONArray("list")
+            val creators = buildList {
+                if (list != null) {
+                    for (index in 0 until list.length()) {
+                        val item = list.optJSONObject(index) ?: continue
+                        val mid = item.optLong("mid")
+                        if (mid <= 0L) continue
+                        add(
+                            FollowedCreator(
+                                mid = mid,
+                                name = item.optString("uname", "Unknown creator"),
+                                avatarUrl = item.optString("face").replace("http://", "https://"),
+                                description = item.optString("sign")
+                            )
+                        )
+                    }
+                }
+            }
+            followingPage = requestedPage
+            val total = data.optInt("total", creators.size)
+            FollowingPage(
+                creators = creators,
+                page = requestedPage,
+                total = total,
+                hasMore = requestedPage * FOLLOWING_PAGE_SIZE < total
+            )
+        }
+    }
+
+    fun fetchCreatorVideos(
+        creator: FollowedCreator,
+        page: Int,
+        callback: (Result<CreatorVideoPage>) -> Unit
+    ): Call {
+        if (wbiMixinKey.isBlank()) error("Creator-video signing data is unavailable")
+        val url = signedWbiUrl(
+            CREATOR_VIDEOS_URL,
+            mapOf(
+                "mid" to creator.mid.toString(),
+                "pn" to page.toString(),
+                "ps" to CREATOR_VIDEO_PAGE_SIZE.toString(),
+                "order" to "pubdate"
+            )
+        )
+        val request = authenticatedRequest(url)
+            .header("Referer", "https://space.bilibili.com/${creator.mid}/video")
+            .build()
+        return enqueueJson(request, callback) { root ->
+            requireApiSuccess(root)
+            val data = root.getJSONObject("data")
+            val list = data.optJSONObject("list")?.optJSONArray("vlist")
+            val videos = buildList {
+                if (list != null) {
+                    for (index in 0 until list.length()) {
+                        val item = list.optJSONObject(index) ?: continue
+                        val aid = item.optLong("aid")
+                        if (aid <= 0L) continue
+                        add(
+                            CreatorVideo(
+                                aid = aid,
+                                cid = item.optLong("cid"),
+                                title = item.optString("title", "Untitled video"),
+                                coverUrl = item.optString("pic").replace("http://", "https://"),
+                                uploader = item.optString("author").ifBlank { creator.name },
+                                viewCount = item.optString("play"),
+                                duration = item.optString("length")
+                            )
+                        )
+                    }
+                }
+            }
+            val total = data.optJSONObject("page")?.optInt("count", videos.size) ?: videos.size
+            CreatorVideoPage(
+                videos = videos,
+                page = page,
+                total = total,
+                hasMore = page * CREATOR_VIDEO_PAGE_SIZE < total
+            )
+        }
+    }
+
+    fun fetchCreatorVideoUrl(
+        video: CreatorVideo,
+        callback: (Result<String>) -> Unit
+    ): Call {
+        if (video.cid > 0L) return fetchArchiveVideoUrl(video.aid, video.cid, callback)
+        val request = authenticatedRequest("$VIDEO_PAGES_URL?aid=${video.aid}")
+            .header("Referer", "https://www.bilibili.com/video/av${video.aid}")
+            .build()
+        return enqueueJson(request, { cidResult ->
+            cidResult.fold(
+                onSuccess = { cid -> fetchArchiveVideoUrl(video.aid, cid, callback) },
+                onFailure = { callback(Result.failure(it)) }
+            )
+        }) { root ->
+            requireApiSuccess(root)
+            root.optJSONArray("data")?.optJSONObject(0)?.optLong("cid")
+                ?.takeIf { it > 0L }
+                ?: error("Video page data was missing")
         }
     }
 
@@ -488,6 +613,37 @@ class BilibiliAuthClient(
             }
     }
 
+    private fun updateWbiMixinKey(wbiImages: JSONObject?) {
+        if (wbiImages == null) return
+        val imageKey = wbiImages.optString("img_url")
+            .substringAfterLast('/')
+            .substringBefore('.')
+        val subKey = wbiImages.optString("sub_url")
+            .substringAfterLast('/')
+            .substringBefore('.')
+        val source = imageKey + subKey
+        if (source.length < WBI_MIXIN_KEY_TABLE.size) return
+        wbiMixinKey = WBI_MIXIN_KEY_TABLE
+            .map(source::get)
+            .joinToString("")
+            .take(32)
+    }
+
+    private fun signedWbiUrl(baseUrl: String, parameters: Map<String, String>): String {
+        val signedParameters = parameters +
+            ("wts" to (System.currentTimeMillis() / 1_000L).toString())
+        val query = signedParameters.toSortedMap().entries.joinToString("&") { (key, value) ->
+            "${urlEncode(key)}=${urlEncode(value.filterNot { it in "!'()*" })}"
+        }
+        val signature = MessageDigest.getInstance("MD5")
+            .digest((query + wbiMixinKey).toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        return "$baseUrl?$query&w_rid=$signature"
+    }
+
+    private fun urlEncode(value: String): String =
+        URLEncoder.encode(value, "UTF-8").replace("+", "%20")
+
     private fun stableIdentifier(
         key: String,
         prefix: String = "",
@@ -575,6 +731,33 @@ class BilibiliAuthClient(
     data class QrChallenge(val url: String, val key: String)
     data class QrPollResult(val state: QrState, val message: String)
     data class Account(val mid: Long, val name: String)
+    data class FollowedCreator(
+        val mid: Long,
+        val name: String,
+        val avatarUrl: String,
+        val description: String
+    )
+    data class FollowingPage(
+        val creators: List<FollowedCreator>,
+        val page: Int,
+        val total: Int,
+        val hasMore: Boolean
+    )
+    data class CreatorVideo(
+        val aid: Long,
+        val cid: Long,
+        val title: String,
+        val coverUrl: String,
+        val uploader: String,
+        val viewCount: String,
+        val duration: String
+    )
+    data class CreatorVideoPage(
+        val videos: List<CreatorVideo>,
+        val page: Int,
+        val total: Int,
+        val hasMore: Boolean
+    )
     data class Recommendation(
         val aid: Long,
         val cid: Long,
@@ -655,12 +838,17 @@ class BilibiliAuthClient(
         private const val LIVE_PLAY_URL =
             "https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo"
         private const val HISTORY_URL = "https://api.bilibili.com/x/web-interface/history/cursor"
+        private const val FOLLOWING_URL = "https://api.bilibili.com/x/relation/followings"
+        private const val CREATOR_VIDEOS_URL = "https://api.bilibili.com/x/space/wbi/arc/search"
+        private const val VIDEO_PAGES_URL = "https://api.bilibili.com/x/player/pagelist"
         private const val PGC_PLAY_URL = "https://api.bilibili.com/pgc/player/web/playurl"
         private const val HEARTBEAT_URL = "https://api.bilibili.com/x/click-interface/web/heartbeat"
         private const val ANDROID_APP_KEY = "1d8b6e7d45233436"
         private const val ANDROID_BUILD = "8290300"
         private const val ANDROID_APP_VERSION = "8.29.0"
         private const val LIVE_PAGE_SIZE = 20
+        private const val FOLLOWING_PAGE_SIZE = 20
+        private const val CREATOR_VIDEO_PAGE_SIZE = 20
         private const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 5.1; BileebileeTV/0.3) " +
                 "AppleWebKit/537.36 Mobile Safari/537.36"
@@ -672,6 +860,12 @@ class BilibiliAuthClient(
             "SESSDATA",
             "bili_jct",
             "sid"
+        )
+        private val WBI_MIXIN_KEY_TABLE = intArrayOf(
+            46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35,
+            27, 43, 5, 49, 33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13,
+            37, 48, 7, 16, 24, 55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4,
+            22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 34, 44, 52
         )
     }
 }

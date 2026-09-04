@@ -23,6 +23,12 @@
     <string name="account_checking">Checking your saved session…</string>
     <string name="account_signed_in">Signed in as %1$s\nUID %2$d</string>
     <string name="use_another_account">Sign in with another account</string>
+    <string name="view_following">Following</string>
+    <string name="following_accounts_title">Following</string>
+    <string name="back_to_following">All creators</string>
+    <string name="more_following">More creators</string>
+    <string name="more_creator_videos">More videos</string>
+    <string name="following_player_hint">Press Back to return to creator videos.</string>
     <string name="player_hint">Press Back to stop playback and return home.</string>
     <string name="video_player_hint">Press Back to return to recommendations.</string>
     <string name="history_player_hint">Press Back to return to watch history.</string>

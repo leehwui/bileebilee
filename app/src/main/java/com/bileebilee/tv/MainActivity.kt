@@ -51,6 +51,7 @@ class MainActivity : Activity() {
     private lateinit var loginTitle: TextView
     private lateinit var qrImage: ImageView
     private lateinit var loginStatus: TextView
+    private lateinit var followingAccountsButton: Button
     private lateinit var newQrButton: Button
     private lateinit var playerView: PlayerView
     private lateinit var playerHint: TextView
@@ -72,6 +73,13 @@ class MainActivity : Activity() {
     private lateinit var followingLiveButton: Button
     private lateinit var popularLiveButton: Button
     private lateinit var moreLiveButton: Button
+    private lateinit var followingPanel: LinearLayout
+    private lateinit var followingTitle: TextView
+    private lateinit var followingStatus: TextView
+    private lateinit var followingScroll: ScrollView
+    private lateinit var followingGrid: GridLayout
+    private lateinit var followingBackButton: Button
+    private lateinit var moreFollowingButton: Button
     private lateinit var authClient: BilibiliAuthClient
 
     private val httpClient = OkHttpClient.Builder()
@@ -88,12 +96,27 @@ class MainActivity : Activity() {
     private var liveRoomsCall: Call? = null
     private var liveStreamCall: Call? = null
     private var videoCall: Call? = null
+    private var followingCall: Call? = null
+    private var creatorVideosCall: Call? = null
     private var playbackReturnScreen = PlaybackReturnScreen.RECOMMENDATIONS
     private var currentBrowseScreen = BrowseScreen.RECOMMENDATIONS
     private var currentAccount: BilibiliAuthClient.Account? = null
     private var accountCheckComplete = false
     private var accountCheckError: String? = null
     private var pendingTabSelection: Runnable? = null
+    private var followingMode = FollowingMode.CREATORS
+    private var followingReturnFocus: View? = null
+    private var followedCreators: List<BilibiliAuthClient.FollowedCreator> = emptyList()
+    private var creatorVideos: List<BilibiliAuthClient.CreatorVideo> = emptyList()
+    private var followedCreatorFocusIndex = 0
+    private var creatorVideoFocusIndex = 0
+    private var followingPage = 0
+    private var followingTotal = 0
+    private var followingHasMore = false
+    private var selectedCreator: BilibiliAuthClient.FollowedCreator? = null
+    private var creatorVideoPage = 0
+    private var creatorVideoTotal = 0
+    private var creatorVideosHaveMore = false
     private var recommendationReturnFocus: View? = null
     private var recommendationPage = 0
     private var recommendationFeedSignedIn = false
@@ -138,6 +161,7 @@ class MainActivity : Activity() {
         loginTitle = findViewById(R.id.login_title)
         qrImage = findViewById(R.id.qr_image)
         loginStatus = findViewById(R.id.login_status)
+        followingAccountsButton = findViewById(R.id.following_accounts_button)
         newQrButton = findViewById(R.id.new_qr_button)
         recommendationsPanel = findViewById(R.id.recommendations_panel)
         recommendationsStatus = findViewById(R.id.recommendations_status)
@@ -157,6 +181,13 @@ class MainActivity : Activity() {
         followingLiveButton = findViewById(R.id.following_live_button)
         popularLiveButton = findViewById(R.id.popular_live_button)
         moreLiveButton = findViewById(R.id.more_live_button)
+        followingPanel = findViewById(R.id.following_panel)
+        followingTitle = findViewById(R.id.following_title)
+        followingStatus = findViewById(R.id.following_status)
+        followingScroll = findViewById(R.id.following_scroll)
+        followingGrid = findViewById(R.id.following_grid)
+        followingBackButton = findViewById(R.id.following_back_button)
+        moreFollowingButton = findViewById(R.id.more_following_button)
         recommendationsButton.isAllCaps = false
         historyButton.isAllCaps = false
         liveButton.isAllCaps = false
@@ -170,6 +201,7 @@ class MainActivity : Activity() {
         historyButton.setOnClickListener { showHistory(focusContent = false) }
         liveButton.setOnClickListener { showLiveRooms(focusContent = false) }
         loginButton.setOnClickListener { showAccount() }
+        followingAccountsButton.setOnClickListener { showFollowingCreators(reset = true) }
         newQrButton.setOnClickListener { startQrLogin() }
         refreshRecommendationsButton.setOnClickListener { loadRecommendations() }
         moreHistoryButton.setOnClickListener { loadHistory() }
@@ -180,16 +212,26 @@ class MainActivity : Activity() {
             selectLiveSource(BilibiliAuthClient.LiveSource.POPULAR)
         }
         moreLiveButton.setOnClickListener { loadLiveRooms() }
+        followingBackButton.setOnClickListener { showFollowingCreators(reset = false) }
+        moreFollowingButton.setOnClickListener {
+            if (followingMode == FollowingMode.CREATORS) loadFollowingCreators() else loadCreatorVideos()
+        }
         refreshRecommendationsButton.isAllCaps = false
         moreHistoryButton.isAllCaps = false
         followingLiveButton.isAllCaps = false
         popularLiveButton.isAllCaps = false
         moreLiveButton.isAllCaps = false
+        followingAccountsButton.isAllCaps = false
+        followingBackButton.isAllCaps = false
+        moreFollowingButton.isAllCaps = false
         installNavigationTab(recommendationsButton, BrowseScreen.RECOMMENDATIONS)
         installNavigationTab(historyButton, BrowseScreen.HISTORY)
         installNavigationTab(liveButton, BrowseScreen.LIVE)
         installNavigationTab(loginButton, BrowseScreen.ACCOUNT)
         installFocusFeedback(newQrButton)
+        installFocusFeedback(followingAccountsButton)
+        installFocusFeedback(followingBackButton)
+        installFocusFeedback(moreFollowingButton)
 
         checkAccount()
         showRecommendations(focusContent = false)
@@ -231,7 +273,11 @@ class MainActivity : Activity() {
     }
 
     private fun leaveAccountIfNeeded() {
-        if (currentBrowseScreen == BrowseScreen.ACCOUNT) cancelQrLogin()
+        if (currentBrowseScreen == BrowseScreen.ACCOUNT) {
+            cancelQrLogin()
+            followingCall?.cancel()
+            creatorVideosCall?.cancel()
+        }
     }
 
     private fun showRecommendations(focusContent: Boolean = true) {
@@ -239,6 +285,7 @@ class MainActivity : Activity() {
         loginPanel.visibility = View.GONE
         historyPanel.visibility = View.GONE
         livePanel.visibility = View.GONE
+        followingPanel.visibility = View.GONE
         recommendationsPanel.visibility = View.VISIBLE
         currentBrowseScreen = BrowseScreen.RECOMMENDATIONS
         updateNavigation(recommendationsButton)
@@ -255,6 +302,7 @@ class MainActivity : Activity() {
         recommendationsPanel.visibility = View.GONE
         loginPanel.visibility = View.GONE
         livePanel.visibility = View.GONE
+        followingPanel.visibility = View.GONE
         historyPanel.visibility = View.VISIBLE
         currentBrowseScreen = BrowseScreen.HISTORY
         updateNavigation(historyButton)
@@ -278,6 +326,7 @@ class MainActivity : Activity() {
         recommendationsPanel.visibility = View.GONE
         historyPanel.visibility = View.GONE
         loginPanel.visibility = View.GONE
+        followingPanel.visibility = View.GONE
         livePanel.visibility = View.VISIBLE
         currentBrowseScreen = BrowseScreen.LIVE
         updateNavigation(liveButton)
@@ -868,6 +917,299 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun showFollowingCreators(reset: Boolean) {
+        val account = currentAccount ?: run {
+            showAccount()
+            return
+        }
+        cancelQrLogin()
+        recommendationsPanel.visibility = View.GONE
+        historyPanel.visibility = View.GONE
+        livePanel.visibility = View.GONE
+        loginPanel.visibility = View.GONE
+        followingPanel.visibility = View.VISIBLE
+        currentBrowseScreen = BrowseScreen.ACCOUNT
+        updateNavigation(loginButton)
+        followingMode = FollowingMode.CREATORS
+        followingTitle.text = getString(R.string.following_accounts_title)
+        followingBackButton.visibility = View.GONE
+        moreFollowingButton.text = getString(R.string.more_following)
+        if (reset || followedCreators.isEmpty()) {
+            authClient.resetFollowing()
+            followingPage = 0
+            followingTotal = 0
+            followingHasMore = false
+            followedCreatorFocusIndex = 0
+            followingGrid.removeAllViews()
+            followingScroll.scrollTo(0, 0)
+            loadFollowingCreators(account.mid)
+        } else {
+            renderFollowedCreators(followedCreators)
+            followingStatus.text = followingCreatorsSummary()
+            moreFollowingButton.isEnabled = followingHasMore
+            restoreFollowingFocus(followedCreatorFocusIndex)
+        }
+    }
+
+    private fun loadFollowingCreators(accountId: Long? = currentAccount?.mid) {
+        val resolvedAccountId = accountId ?: return
+        followingCall?.cancel()
+        followingStatus.text = "Loading followed creators…"
+        moreFollowingButton.isEnabled = false
+        followingCall = authClient.fetchFollowing(resolvedAccountId) { result ->
+            runOnUiThread {
+                if (followingMode != FollowingMode.CREATORS ||
+                    followingPanel.visibility != View.VISIBLE
+                ) return@runOnUiThread
+                result.fold(
+                    onSuccess = { page ->
+                        followedCreators = page.creators
+                        followingPage = page.page
+                        followingTotal = page.total
+                        followingHasMore = page.hasMore
+                        followedCreatorFocusIndex = 0
+                        renderFollowedCreators(page.creators)
+                        followingStatus.text = if (page.creators.isEmpty()) {
+                            "No followed creators were returned."
+                        } else {
+                            followingCreatorsSummary()
+                        }
+                        moreFollowingButton.isEnabled = page.hasMore
+                        restoreFollowingFocus(0)
+                    },
+                    onFailure = { error ->
+                        followingStatus.text =
+                            "Following request failed: ${error.message.orEmpty()}"
+                        moreFollowingButton.isEnabled = true
+                        moreFollowingButton.requestFocus()
+                    }
+                )
+            }
+        }
+    }
+
+    private fun renderFollowedCreators(creators: List<BilibiliAuthClient.FollowedCreator>) {
+        coverCalls.forEach(Call::cancel)
+        coverCalls.clear()
+        followingGrid.removeAllViews()
+        val cardWidth = gridCardWidth()
+        creators.forEachIndexed { index, creator ->
+            val card = LayoutInflater.from(this)
+                .inflate(R.layout.recommendation_card, followingGrid, false)
+            card.id = View.generateViewId()
+            if (index < GRID_COLUMN_COUNT) {
+                card.nextFocusUpId = if (index == GRID_COLUMN_COUNT - 1) {
+                    R.id.more_following_button
+                } else {
+                    R.id.login_button
+                }
+            }
+            if (index == 0) loginButton.nextFocusDownId = card.id
+            val avatar = card.findViewById<ImageView>(R.id.recommendation_cover)
+            avatar.scaleType = ImageView.ScaleType.FIT_CENTER
+            card.findViewById<TextView>(R.id.recommendation_title).text = creator.name
+            card.findViewById<TextView>(R.id.recommendation_duration).text = ""
+            card.findViewById<TextView>(R.id.recommendation_meta).text =
+                creator.description.ifBlank { "Followed creator" }
+            card.contentDescription = listOf(creator.name, creator.description)
+                .filter(String::isNotBlank)
+                .joinToString(", ")
+            card.setOnClickListener {
+                followedCreatorFocusIndex = index
+                selectedCreator = creator
+                showCreatorVideos(creator, reset = true)
+            }
+            card.setOnFocusChangeListener { view, hasFocus ->
+                if (hasFocus) {
+                    followedCreatorFocusIndex = index
+                    followingReturnFocus = view
+                    snapGridToFocusedRow(followingScroll, followingGrid, index)
+                }
+                view.animate()
+                    .scaleX(if (hasFocus) 1.055f else 1f)
+                    .scaleY(if (hasFocus) 1.055f else 1f)
+                    .setDuration(120L)
+                    .start()
+                view.elevation = if (hasFocus) 18f else 0f
+            }
+            followingGrid.addView(
+                card,
+                GridLayout.LayoutParams().apply {
+                    width = cardWidth
+                    height = GridLayout.LayoutParams.WRAP_CONTENT
+                    setMargins(
+                        dp(CARD_MARGIN_DP), dp(CARD_MARGIN_DP),
+                        dp(CARD_MARGIN_DP), dp(CARD_MARGIN_DP)
+                    )
+                }
+            )
+            loadCover(creator.avatarUrl, avatar)
+        }
+    }
+
+    private fun showCreatorVideos(
+        creator: BilibiliAuthClient.FollowedCreator,
+        reset: Boolean
+    ) {
+        followingMode = FollowingMode.VIDEOS
+        selectedCreator = creator
+        followingPanel.visibility = View.VISIBLE
+        loginPanel.visibility = View.GONE
+        followingTitle.text = creator.name
+        followingBackButton.visibility = View.VISIBLE
+        moreFollowingButton.text = getString(R.string.more_creator_videos)
+        if (reset || creatorVideos.isEmpty()) {
+            creatorVideoPage = 0
+            creatorVideoTotal = 0
+            creatorVideosHaveMore = false
+            creatorVideoFocusIndex = 0
+            creatorVideos = emptyList()
+            followingGrid.removeAllViews()
+            followingScroll.scrollTo(0, 0)
+            loadCreatorVideos()
+        } else {
+            renderCreatorVideos(creatorVideos)
+            followingStatus.text = creatorVideosSummary()
+            moreFollowingButton.isEnabled = creatorVideosHaveMore
+            restoreFollowingFocus(creatorVideoFocusIndex)
+        }
+    }
+
+    private fun loadCreatorVideos() {
+        val creator = selectedCreator ?: return
+        creatorVideosCall?.cancel()
+        val requestedPage = creatorVideoPage + 1
+        followingStatus.text = "Loading recent videos…"
+        moreFollowingButton.isEnabled = false
+        creatorVideosCall = authClient.fetchCreatorVideos(creator, requestedPage) { result ->
+            runOnUiThread {
+                if (followingMode != FollowingMode.VIDEOS || selectedCreator != creator ||
+                    followingPanel.visibility != View.VISIBLE
+                ) return@runOnUiThread
+                result.fold(
+                    onSuccess = { page ->
+                        creatorVideos = page.videos
+                        creatorVideoPage = page.page
+                        creatorVideoTotal = page.total
+                        creatorVideosHaveMore = page.hasMore
+                        creatorVideoFocusIndex = 0
+                        renderCreatorVideos(page.videos)
+                        followingStatus.text = if (page.videos.isEmpty()) {
+                            "No public videos were returned for this creator."
+                        } else {
+                            creatorVideosSummary()
+                        }
+                        moreFollowingButton.isEnabled = page.hasMore
+                        restoreFollowingFocus(0)
+                    },
+                    onFailure = { error ->
+                        followingStatus.text =
+                            "Creator-video request failed: ${error.message.orEmpty()}"
+                        moreFollowingButton.isEnabled = true
+                        moreFollowingButton.requestFocus()
+                    }
+                )
+            }
+        }
+    }
+
+    private fun renderCreatorVideos(videos: List<BilibiliAuthClient.CreatorVideo>) {
+        coverCalls.forEach(Call::cancel)
+        coverCalls.clear()
+        followingGrid.removeAllViews()
+        val cardWidth = gridCardWidth()
+        videos.forEachIndexed { index, video ->
+            val card = LayoutInflater.from(this)
+                .inflate(R.layout.recommendation_card, followingGrid, false)
+            card.id = View.generateViewId()
+            if (index < GRID_COLUMN_COUNT) {
+                card.nextFocusUpId = when (index) {
+                    2 -> R.id.following_back_button
+                    3 -> R.id.more_following_button
+                    else -> R.id.login_button
+                }
+            }
+            if (index == 0) loginButton.nextFocusDownId = card.id
+            val cover = card.findViewById<ImageView>(R.id.recommendation_cover)
+            card.findViewById<TextView>(R.id.recommendation_title).text = video.title
+            card.findViewById<TextView>(R.id.recommendation_duration).text = video.duration
+            card.findViewById<TextView>(R.id.recommendation_meta).text =
+                listOf(video.uploader, video.viewCount)
+                    .filter(String::isNotBlank)
+                    .joinToString("  •  ")
+            card.contentDescription = listOf(video.title, video.uploader, video.duration)
+                .filter(String::isNotBlank)
+                .joinToString(", ")
+            card.setOnClickListener {
+                creatorVideoFocusIndex = index
+                followingReturnFocus = card
+                playCreatorVideo(video)
+            }
+            card.setOnFocusChangeListener { view, hasFocus ->
+                if (hasFocus) {
+                    creatorVideoFocusIndex = index
+                    followingReturnFocus = view
+                    snapGridToFocusedRow(followingScroll, followingGrid, index)
+                }
+                view.animate()
+                    .scaleX(if (hasFocus) 1.055f else 1f)
+                    .scaleY(if (hasFocus) 1.055f else 1f)
+                    .setDuration(120L)
+                    .start()
+                view.elevation = if (hasFocus) 18f else 0f
+            }
+            followingGrid.addView(
+                card,
+                GridLayout.LayoutParams().apply {
+                    width = cardWidth
+                    height = GridLayout.LayoutParams.WRAP_CONTENT
+                    setMargins(
+                        dp(CARD_MARGIN_DP), dp(CARD_MARGIN_DP),
+                        dp(CARD_MARGIN_DP), dp(CARD_MARGIN_DP)
+                    )
+                }
+            )
+            loadCover(video.coverUrl, cover)
+        }
+    }
+
+    private fun playCreatorVideo(video: BilibiliAuthClient.CreatorVideo) {
+        videoCall?.cancel()
+        followingStatus.text = "Opening ${video.title}…"
+        videoCall = authClient.fetchCreatorVideoUrl(video) { result ->
+            runOnUiThread {
+                result.fold(
+                    onSuccess = { url ->
+                        playerHint.text = getString(R.string.following_player_hint)
+                        playMedia(
+                            url = url,
+                            referer = "https://www.bilibili.com/video/av${video.aid}",
+                            returnScreen = PlaybackReturnScreen.FOLLOWING
+                        )
+                    },
+                    onFailure = { error ->
+                        followingStatus.text =
+                            "Could not play creator video: ${error.message.orEmpty()}"
+                        restoreFollowingFocus(creatorVideoFocusIndex)
+                    }
+                )
+            }
+        }
+    }
+
+    private fun followingCreatorsSummary(): String =
+        "${followedCreators.size} creators • Page $followingPage • $followingTotal total"
+
+    private fun creatorVideosSummary(): String =
+        "${creatorVideos.size} videos • Page $creatorVideoPage • $creatorVideoTotal total"
+
+    private fun restoreFollowingFocus(index: Int) {
+        followingGrid.post {
+            followingGrid.getChildAt(index.coerceIn(0, (followingGrid.childCount - 1).coerceAtLeast(0)))
+                ?.requestFocus()
+        }
+    }
+
     private fun checkAccount() {
         accountCall?.cancel()
         accountCheckComplete = false
@@ -901,9 +1243,12 @@ class MainActivity : Activity() {
     }
 
     private fun showAccount() {
+        followingCall?.cancel()
+        creatorVideosCall?.cancel()
         recommendationsPanel.visibility = View.GONE
         historyPanel.visibility = View.GONE
         livePanel.visibility = View.GONE
+        followingPanel.visibility = View.GONE
         loginPanel.visibility = View.VISIBLE
         currentBrowseScreen = BrowseScreen.ACCOUNT
         updateNavigation(loginButton)
@@ -921,6 +1266,7 @@ class MainActivity : Activity() {
         setLoginDetailsStartMargin(0)
         loginTitle.text = getString(R.string.account_title)
         loginStatus.text = getString(R.string.account_checking)
+        followingAccountsButton.visibility = View.GONE
         newQrButton.visibility = View.GONE
     }
 
@@ -930,6 +1276,8 @@ class MainActivity : Activity() {
         setLoginDetailsStartMargin(0)
         loginTitle.text = getString(R.string.account_title)
         loginStatus.text = getString(R.string.account_signed_in, account.name, account.mid)
+        loginButton.nextFocusDownId = R.id.following_accounts_button
+        followingAccountsButton.visibility = View.VISIBLE
         newQrButton.text = getString(R.string.use_another_account)
         newQrButton.isEnabled = true
         newQrButton.visibility = View.VISIBLE
@@ -941,6 +1289,7 @@ class MainActivity : Activity() {
         setLoginDetailsStartMargin(0)
         loginTitle.text = getString(R.string.account_title)
         loginStatus.text = "Could not check your account: $message"
+        followingAccountsButton.visibility = View.GONE
         newQrButton.text = getString(R.string.new_qr_code)
         newQrButton.isEnabled = true
         newQrButton.visibility = View.VISIBLE
@@ -958,6 +1307,7 @@ class MainActivity : Activity() {
         recommendationsPanel.visibility = View.GONE
         historyPanel.visibility = View.GONE
         livePanel.visibility = View.GONE
+        followingPanel.visibility = View.GONE
         currentBrowseScreen = BrowseScreen.ACCOUNT
         updateNavigation(loginButton)
         loginPanel.visibility = View.VISIBLE
@@ -966,6 +1316,8 @@ class MainActivity : Activity() {
         setLoginDetailsStartMargin(36)
         loginTitle.text = getString(R.string.qr_login_title)
         loginStatus.text = "Requesting a QR code…"
+        loginButton.nextFocusDownId = R.id.new_qr_button
+        followingAccountsButton.visibility = View.GONE
         newQrButton.text = getString(R.string.new_qr_code)
         newQrButton.visibility = View.VISIBLE
         newQrButton.isEnabled = false
@@ -1093,6 +1445,7 @@ class MainActivity : Activity() {
                 historyPanel.visibility = View.GONE
                 livePanel.visibility = View.GONE
                 loginPanel.visibility = View.GONE
+                followingPanel.visibility = View.GONE
                 playerView.visibility = View.VISIBLE
                 playerHint.visibility = View.VISIBLE
                 exoPlayer.setMediaItem(MediaItem.fromUri(url))
@@ -1153,6 +1506,8 @@ class MainActivity : Activity() {
         recommendationsPanel.visibility = View.GONE
         historyPanel.visibility = View.GONE
         livePanel.visibility = View.GONE
+        loginPanel.visibility = View.GONE
+        followingPanel.visibility = View.GONE
         when (returnScreen) {
             PlaybackReturnScreen.RECOMMENDATIONS -> {
                 currentBrowseScreen = BrowseScreen.RECOMMENDATIONS
@@ -1171,6 +1526,12 @@ class MainActivity : Activity() {
                 updateNavigation(liveButton)
                 livePanel.visibility = View.VISIBLE
                 liveStatus.text = liveSummary()
+            }
+            PlaybackReturnScreen.FOLLOWING -> {
+                currentBrowseScreen = BrowseScreen.ACCOUNT
+                updateNavigation(loginButton)
+                followingPanel.visibility = View.VISIBLE
+                followingStatus.text = creatorVideosSummary()
             }
         }
     }
@@ -1192,6 +1553,10 @@ class MainActivity : Activity() {
                 liveStatus.text = message
                 restoreLiveFocus()
             }
+            PlaybackReturnScreen.FOLLOWING -> {
+                followingStatus.text = message
+                restoreFollowingFocus(creatorVideoFocusIndex)
+            }
         }
     }
 
@@ -1203,11 +1568,21 @@ class MainActivity : Activity() {
                 PlaybackReturnScreen.RECOMMENDATIONS -> restoreRecommendationFocus()
                 PlaybackReturnScreen.HISTORY -> restoreHistoryFocus()
                 PlaybackReturnScreen.LIVE -> restoreLiveFocus()
+                PlaybackReturnScreen.FOLLOWING -> restoreFollowingFocus(creatorVideoFocusIndex)
             }
             return true
         }
         if (keyCode == KeyEvent.KEYCODE_BACK && loginPanel.visibility == View.VISIBLE) {
             hideAccount()
+            return true
+        }
+        if (keyCode == KeyEvent.KEYCODE_BACK && followingPanel.visibility == View.VISIBLE) {
+            if (followingMode == FollowingMode.VIDEOS) {
+                showFollowingCreators(reset = false)
+            } else {
+                showAccount()
+                followingAccountsButton.requestFocus()
+            }
             return true
         }
         if (keyCode == KeyEvent.KEYCODE_BACK && historyPanel.visibility == View.VISIBLE) {
@@ -1230,9 +1605,17 @@ class MainActivity : Activity() {
                 PlaybackReturnScreen.RECOMMENDATIONS -> restoreRecommendationFocus()
                 PlaybackReturnScreen.HISTORY -> restoreHistoryFocus()
                 PlaybackReturnScreen.LIVE -> restoreLiveFocus()
+                PlaybackReturnScreen.FOLLOWING -> restoreFollowingFocus(creatorVideoFocusIndex)
             }
         } else if (loginPanel.visibility == View.VISIBLE) {
             hideAccount()
+        } else if (followingPanel.visibility == View.VISIBLE) {
+            if (followingMode == FollowingMode.VIDEOS) {
+                showFollowingCreators(reset = false)
+            } else {
+                showAccount()
+                followingAccountsButton.requestFocus()
+            }
         } else if (historyPanel.visibility == View.VISIBLE) {
             hideHistory()
         } else if (livePanel.visibility == View.VISIBLE) {
@@ -1250,6 +1633,8 @@ class MainActivity : Activity() {
         historyCall?.cancel()
         liveRoomsCall?.cancel()
         liveStreamCall?.cancel()
+        followingCall?.cancel()
+        creatorVideosCall?.cancel()
         videoCall?.cancel()
         coverCalls.forEach(Call::cancel)
         coverCalls.clear()
@@ -1261,7 +1646,13 @@ class MainActivity : Activity() {
     private enum class PlaybackReturnScreen {
         RECOMMENDATIONS,
         HISTORY,
-        LIVE
+        LIVE,
+        FOLLOWING
+    }
+
+    private enum class FollowingMode {
+        CREATORS,
+        VIDEOS
     }
 
     private enum class BrowseScreen {

@@ -284,6 +284,92 @@
     </LinearLayout>
 
     <LinearLayout
+        android:id="@+id/following_panel"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#101114"
+        android:orientation="vertical"
+        android:paddingTop="84dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="72dp"
+            android:paddingEnd="72dp">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/following_title"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/following_accounts_title"
+                    android:textColor="#FFFFFF"
+                    android:textSize="26sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/following_status"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:textColor="#BFC0C5"
+                    android:textSize="14sp" />
+            </LinearLayout>
+
+            <Button
+                android:id="@+id/following_back_button"
+                android:layout_width="wrap_content"
+                android:layout_height="46dp"
+                android:background="@drawable/tv_button_background"
+                android:focusable="true"
+                android:minWidth="150dp"
+                android:text="@string/back_to_following"
+                android:textColor="@color/tv_button_text"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/more_following_button"
+                android:layout_width="wrap_content"
+                android:layout_height="46dp"
+                android:layout_marginStart="10dp"
+                android:background="@drawable/tv_button_background"
+                android:focusable="true"
+                android:minWidth="180dp"
+                android:text="@string/more_following"
+                android:textColor="@color/tv_button_text" />
+        </LinearLayout>
+
+        <ScrollView
+            android:id="@+id/following_scroll"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginTop="12dp"
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            android:fillViewport="true"
+            android:paddingStart="72dp"
+            android:paddingEnd="72dp"
+            android:paddingBottom="24dp">
+
+            <GridLayout
+                android:id="@+id/following_grid"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:clipChildren="false"
+                android:columnCount="4"
+                android:orientation="horizontal" />
+        </ScrollView>
+    </LinearLayout>
+
+    <LinearLayout
         android:id="@+id/navigation_bar"
         android:layout_width="match_parent"
         android:layout_height="72dp"
@@ -357,7 +443,7 @@
             android:background="@drawable/tab_button_background"
             android:focusable="true"
             android:minWidth="0dp"
-            android:nextFocusDown="@id/new_qr_button"
+            android:nextFocusDown="@id/following_accounts_button"
             android:nextFocusLeft="@id/live_button"
             android:text="@string/account"
             android:textColor="@color/tv_button_text"
@@ -413,7 +499,7 @@
                 android:textSize="19sp" />
 
             <Button
-                android:id="@+id/new_qr_button"
+                android:id="@+id/following_accounts_button"
                 android:layout_width="wrap_content"
                 android:layout_height="56dp"
                 android:layout_marginTop="24dp"
@@ -421,6 +507,22 @@
                 android:focusable="true"
                 android:minWidth="300dp"
                 android:nextFocusUp="@id/login_button"
+                android:nextFocusDown="@id/new_qr_button"
+                android:paddingStart="28dp"
+                android:paddingEnd="28dp"
+                android:text="@string/view_following"
+                android:textColor="@color/tv_button_text"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/new_qr_button"
+                android:layout_width="wrap_content"
+                android:layout_height="56dp"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/tv_button_background"
+                android:focusable="true"
+                android:minWidth="300dp"
+                android:nextFocusUp="@id/following_accounts_button"
                 android:paddingStart="28dp"
                 android:paddingEnd="28dp"
                 android:text="@string/new_qr_code"
