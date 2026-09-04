@@ -4,8 +4,6 @@ import android.app.Activity
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
-import android.media.MediaCodecInfo
-import android.media.MediaCodecList
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -216,18 +214,12 @@ class MainActivity : Activity() {
 
     private fun refreshDiagnostics() {
         statusText.text = buildString {
-            appendLine("App: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
-            appendLine("Android: ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT}")
-            appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
-            appendLine("ABI: ${Build.SUPPORTED_ABIS.joinToString()}")
-            appendLine("Display: ${resources.displayMetrics.widthPixels}x${resources.displayMetrics.heightPixels}")
             appendLine(accountStatus)
-            appendLine()
-            appendLine("Hardware video decoders:")
-            append(codecSummary())
-            appendLine()
-            appendLine("D-pad input: ready")
-            appendLine("Network: live-room browsing ready")
+            append(
+                "Bileebilee ${BuildConfig.VERSION_NAME} • ${Build.MANUFACTURER} ${Build.MODEL} • " +
+                    "Android ${Build.VERSION.RELEASE} • " +
+                    "${resources.displayMetrics.widthPixels}×${resources.displayMetrics.heightPixels}"
+            )
         }
     }
 
@@ -361,7 +353,7 @@ class MainActivity : Activity() {
         coverCalls.clear()
         liveGrid.removeAllViews()
         liveReturnFocus = null
-        val cardWidth = (resources.displayMetrics.widthPixels - dp(96)) / 4
+        val cardWidth = gridCardWidth()
         rooms.forEach { room ->
             val card = LayoutInflater.from(this)
                 .inflate(R.layout.recommendation_card, liveGrid, false)
@@ -398,6 +390,7 @@ class MainActivity : Activity() {
                 GridLayout.LayoutParams().apply {
                     width = cardWidth
                     height = GridLayout.LayoutParams.WRAP_CONTENT
+                    setMargins(dp(CARD_MARGIN_DP), dp(CARD_MARGIN_DP), dp(CARD_MARGIN_DP), dp(CARD_MARGIN_DP))
                 }
             )
             loadCover(room.coverUrl, cover)
@@ -493,7 +486,7 @@ class MainActivity : Activity() {
         coverCalls.clear()
         historyGrid.removeAllViews()
         historyReturnFocus = null
-        val cardWidth = (resources.displayMetrics.widthPixels - dp(96)) / 4
+        val cardWidth = gridCardWidth()
         items.forEach { item ->
             val card = LayoutInflater.from(this)
                 .inflate(R.layout.recommendation_card, historyGrid, false)
@@ -530,6 +523,7 @@ class MainActivity : Activity() {
                 GridLayout.LayoutParams().apply {
                     width = cardWidth
                     height = GridLayout.LayoutParams.WRAP_CONTENT
+                    setMargins(dp(CARD_MARGIN_DP), dp(CARD_MARGIN_DP), dp(CARD_MARGIN_DP), dp(CARD_MARGIN_DP))
                 }
             )
             loadCover(item.coverUrl, cover)
@@ -646,8 +640,7 @@ class MainActivity : Activity() {
         coverCalls.clear()
         recommendationsGrid.removeAllViews()
         recommendationReturnFocus = null
-        val horizontalPadding = dp(96)
-        val cardWidth = (resources.displayMetrics.widthPixels - horizontalPadding) / 4
+        val cardWidth = gridCardWidth()
         videos.forEach { video ->
             val card = LayoutInflater.from(this)
                 .inflate(R.layout.recommendation_card, recommendationsGrid, false)
@@ -678,6 +671,7 @@ class MainActivity : Activity() {
                 GridLayout.LayoutParams().apply {
                     width = cardWidth
                     height = GridLayout.LayoutParams.WRAP_CONTENT
+                    setMargins(dp(CARD_MARGIN_DP), dp(CARD_MARGIN_DP), dp(CARD_MARGIN_DP), dp(CARD_MARGIN_DP))
                 }
             )
             loadCover(video.coverUrl, cover)
@@ -750,6 +744,11 @@ class MainActivity : Activity() {
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
+    private fun gridCardWidth(): Int {
+        val usableWidth = resources.displayMetrics.widthPixels - dp(GRID_SIDE_PADDING_DP * 2)
+        return usableWidth / GRID_COLUMN_COUNT - dp(CARD_MARGIN_DP * 2)
+    }
+
     private fun recommendationSummary(): String {
         val session = if (recommendationFeedSignedIn) "signed in" else "guest"
         return "${recommendationsGrid.childCount} videos • Mobile $session • " +
@@ -793,10 +792,16 @@ class MainActivity : Activity() {
             runOnUiThread {
                 accountStatus = result.fold(
                     onSuccess = { account ->
+                        loginButton.text = account?.let {
+                            getString(R.string.home_account_signed_in, it.name)
+                        } ?: getString(R.string.home_account)
                         account?.let { "Account: ${it.name} (UID ${it.mid})" }
                             ?: "Account: not signed in"
                     },
-                    onFailure = { error -> "Account check failed: ${error.message.orEmpty()}" }
+                    onFailure = { error ->
+                        loginButton.text = getString(R.string.home_account)
+                        "Account check failed: ${error.message.orEmpty()}"
+                    }
                 )
                 refreshDiagnostics()
             }
@@ -900,23 +905,6 @@ class MainActivity : Activity() {
         cancelQrLogin()
         loginPanel.visibility = View.GONE
         loginButton.requestFocus()
-    }
-
-    private fun codecSummary(): String {
-        val wantedTypes = setOf("video/avc", "video/hevc")
-        val matches = mutableListOf<String>()
-        return try {
-            MediaCodecList(MediaCodecList.ALL_CODECS).codecInfos
-                .filterNot(MediaCodecInfo::isEncoder)
-                .forEach { codec ->
-                    codec.supportedTypes
-                        .filter { it.lowercase() in wantedTypes }
-                        .forEach { type -> matches += "• $type — ${codec.name}" }
-                }
-            if (matches.isEmpty()) "• No AVC/HEVC decoder reported\n" else matches.joinToString("\n", postfix = "\n")
-        } catch (error: Exception) {
-            "• Could not enumerate codecs: ${error.message}\n"
-        }
     }
 
     @androidx.annotation.OptIn(markerClass = [UnstableApi::class])
@@ -1141,5 +1129,8 @@ class MainActivity : Activity() {
         const val HEARTBEAT_INTERVAL_MS = 15_000L
         const val COVER_WIDTH_PX = 640
         const val COVER_HEIGHT_PX = 360
+        const val GRID_SIDE_PADDING_DP = 72
+        const val GRID_COLUMN_COUNT = 4
+        const val CARD_MARGIN_DP = 10
     }
 }

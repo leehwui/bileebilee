@@ -1,7 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Bileebilee</string>
-    <string name="diagnostics_title">Bileebilee device check</string>
+    <string name="diagnostics_title">Bileebilee</string>
+    <string name="home_tagline">Your Bilibili, made for the big screen.</string>
+    <string name="home_section_title">What would you like to watch?</string>
+    <string name="home_recommendations">For you\nPersonal picks</string>
+    <string name="home_history">History\nKeep watching</string>
+    <string name="home_live">Live\nFollowing + popular</string>
+    <string name="home_account">Account\nQR sign-in</string>
+    <string name="home_account_signed_in">Account\n%1$s</string>
     <string name="live">Live</string>
     <string name="following_live_title">Following live</string>
     <string name="popular_live_title">Popular live rooms</string>
@@ -18,7 +25,7 @@
     <string name="new_qr_code">Generate a new QR code</string>
     <string name="qr_login_title">Sign in to Bilibili</string>
     <string name="qr_login_instructions">Scan with the Bilibili mobile app, then confirm on your phone.</string>
-    <string name="player_hint">Press Back to stop playback and return to diagnostics.</string>
+    <string name="player_hint">Press Back to stop playback and return home.</string>
     <string name="video_player_hint">Press Back to return to recommendations.</string>
     <string name="history_player_hint">Press Back to return to watch history.</string>
     <string name="live_player_hint">Press Back to return to live rooms.</string>
