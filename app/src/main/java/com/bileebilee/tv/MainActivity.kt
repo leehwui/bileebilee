@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.LruCache
 import android.view.KeyEvent
 import android.view.LayoutInflater
@@ -89,12 +90,25 @@ class MainActivity : Activity() {
     private var historyPage = 0
     private var historyHasMore = false
     private var historySkipped = 0
+    private var playbackHeartbeatCall: Call? = null
+    private var activePlaybackTracking: BilibiliAuthClient.PlaybackTracking? = null
+    private var playbackStartedAt = 0L
+    private var playbackStartedRealtime = 0L
+    private var lastReportedSecond = -1L
     private val coverCalls = mutableListOf<Call>()
     private val coverCache = object : LruCache<String, Bitmap>(12 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
     }
     private val mainHandler = Handler(Looper.getMainLooper())
     private val qrPollRunnable = Runnable { qrKey?.let(::pollQr) }
+    private val playbackHeartbeatRunnable = object : Runnable {
+        override fun run() {
+            reportPlaybackHeartbeat()
+            if (player != null && activePlaybackTracking != null) {
+                mainHandler.postDelayed(this, HEARTBEAT_INTERVAL_MS)
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -365,7 +379,13 @@ class MainActivity : Activity() {
                             url = url,
                             referer = referer,
                             returnScreen = PlaybackReturnScreen.HISTORY,
-                            startPositionMs = resumeSeconds * 1_000L
+                            startPositionMs = resumeSeconds * 1_000L,
+                            tracking = BilibiliAuthClient.PlaybackTracking(
+                                aid = item.aid,
+                                cid = item.cid,
+                                epId = item.epId,
+                                business = item.business
+                            )
                         )
                     },
                     onFailure = { error ->
@@ -506,7 +526,8 @@ class MainActivity : Activity() {
                         playMedia(
                             url = url,
                             referer = "https://www.bilibili.com/video/av${video.aid}",
-                            returnScreen = PlaybackReturnScreen.RECOMMENDATIONS
+                            returnScreen = PlaybackReturnScreen.RECOMMENDATIONS,
+                            tracking = BilibiliAuthClient.PlaybackTracking(video.aid, video.cid)
                         )
                     },
                     onFailure = { error ->
@@ -755,7 +776,8 @@ class MainActivity : Activity() {
         url: String,
         referer: String,
         returnScreen: PlaybackReturnScreen,
-        startPositionMs: Long = 0L
+        startPositionMs: Long = 0L,
+        tracking: BilibiliAuthClient.PlaybackTracking? = null
     ) {
         val requestHeaders = mapOf(
             "Referer" to referer,
@@ -766,6 +788,7 @@ class MainActivity : Activity() {
             .setDefaultRequestProperties(requestHeaders)
             .setAllowCrossProtocolRedirects(true)
 
+        finishPlaybackTracking()
         releasePlayer()
         playbackReturnScreen = returnScreen
         player = ExoPlayer.Builder(this)
@@ -788,7 +811,42 @@ class MainActivity : Activity() {
                 if (startPositionMs > 0L) exoPlayer.seekTo(startPositionMs)
                 exoPlayer.prepare()
                 exoPlayer.playWhenReady = true
+                startPlaybackTracking(tracking)
             }
+    }
+
+    private fun startPlaybackTracking(tracking: BilibiliAuthClient.PlaybackTracking?) {
+        mainHandler.removeCallbacks(playbackHeartbeatRunnable)
+        activePlaybackTracking = tracking
+        lastReportedSecond = -1L
+        if (tracking == null) return
+        playbackStartedAt = System.currentTimeMillis() / 1_000L
+        playbackStartedRealtime = SystemClock.elapsedRealtime()
+        mainHandler.postDelayed(playbackHeartbeatRunnable, FIRST_HEARTBEAT_DELAY_MS)
+    }
+
+    private fun reportPlaybackHeartbeat(force: Boolean = false) {
+        val tracking = activePlaybackTracking ?: return
+        val exoPlayer = player ?: return
+        val playedSeconds = (exoPlayer.currentPosition / 1_000L).coerceAtLeast(0L)
+        if (!force && playedSeconds == lastReportedSecond) return
+        val realtimeSeconds =
+            ((SystemClock.elapsedRealtime() - playbackStartedRealtime) / 1_000L).coerceAtLeast(0L)
+        playbackHeartbeatCall?.cancel()
+        playbackHeartbeatCall = authClient.reportPlaybackProgress(
+            tracking = tracking,
+            playedSeconds = playedSeconds,
+            realtimeSeconds = realtimeSeconds,
+            startedAt = playbackStartedAt
+        )
+        if (playbackHeartbeatCall != null) lastReportedSecond = playedSeconds
+    }
+
+    private fun finishPlaybackTracking() {
+        mainHandler.removeCallbacks(playbackHeartbeatRunnable)
+        if (activePlaybackTracking != null) reportPlaybackHeartbeat(force = true)
+        activePlaybackTracking = null
+        lastReportedSecond = -1L
     }
 
     private fun releasePlayer() {
@@ -801,6 +859,7 @@ class MainActivity : Activity() {
 
     private fun stopPlayback() {
         val returnScreen = playbackReturnScreen
+        finishPlaybackTracking()
         releasePlayer()
         playbackReturnScreen = PlaybackReturnScreen.DIAGNOSTICS
         diagnosticsPanel.visibility = View.GONE
@@ -903,6 +962,7 @@ class MainActivity : Activity() {
         videoCall?.cancel()
         coverCalls.forEach(Call::cancel)
         coverCalls.clear()
+        finishPlaybackTracking()
         releasePlayer()
         super.onDestroy()
     }
@@ -927,5 +987,7 @@ class MainActivity : Activity() {
         const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 5.1; BileebileeTV/0.1) AppleWebKit/537.36 Mobile Safari/537.36"
         const val QR_POLL_INTERVAL_MS = 2_000L
+        const val FIRST_HEARTBEAT_DELAY_MS = 5_000L
+        const val HEARTBEAT_INTERVAL_MS = 15_000L
     }
 }

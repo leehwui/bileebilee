@@ -6,6 +6,7 @@ import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
+import okhttp3.FormBody
 import okhttp3.Request
 import okhttp3.Response
 import org.json.JSONObject
@@ -279,6 +280,37 @@ class BilibiliAuthClient(
         return fetchArchiveVideoUrl(item.aid, item.cid, callback)
     }
 
+    fun reportPlaybackProgress(
+        tracking: PlaybackTracking,
+        playedSeconds: Long,
+        realtimeSeconds: Long,
+        startedAt: Long,
+        callback: (Result<Unit>) -> Unit = {}
+    ): Call? {
+        val csrf = cookieValue("bili_jct") ?: return null
+        val form = FormBody.Builder()
+            .add("aid", tracking.aid.toString())
+            .add("cid", tracking.cid.toString())
+            .add("played_time", playedSeconds.coerceAtLeast(0L).toString())
+            .add("realtime", realtimeSeconds.coerceAtLeast(0L).toString())
+            .add("start_ts", startedAt.toString())
+            .add("type", if (tracking.business == "pgc") "4" else "3")
+            .add("dt", "2")
+            .add("play_type", "0")
+            .add("csrf", csrf)
+            .add("csrf_token", csrf)
+            .apply {
+                if (tracking.epId > 0L) add("epid", tracking.epId.toString())
+            }
+            .build()
+        val request = authenticatedRequest(HEARTBEAT_URL)
+            .post(form)
+            .build()
+        return enqueueJson(request, callback) { root ->
+            requireApiSuccess(root)
+        }
+    }
+
     private fun fetchArchiveVideoUrl(
         aid: Long,
         cid: Long,
@@ -360,6 +392,12 @@ class BilibiliAuthClient(
         }.getOrDefault("")
     }
 
+    private fun cookieValue(name: String): String? {
+        val raw = preferences.getString(COOKIES_KEY, null) ?: return null
+        return runCatching { JSONObject(raw).optString(name).takeIf(String::isNotBlank) }
+            .getOrNull()
+    }
+
     private fun clearSession() {
         preferences.edit().remove(COOKIES_KEY).apply()
     }
@@ -429,6 +467,12 @@ class BilibiliAuthClient(
         val returnedCount: Int,
         val hasMore: Boolean
     )
+    data class PlaybackTracking(
+        val aid: Long,
+        val cid: Long,
+        val epId: Long = 0L,
+        val business: String = "archive"
+    )
 
     enum class QrState {
         WAITING_FOR_SCAN,
@@ -445,6 +489,7 @@ class BilibiliAuthClient(
         private const val FEED_URL = "https://app.bilibili.com/x/v2/feed/index"
         private const val HISTORY_URL = "https://api.bilibili.com/x/web-interface/history/cursor"
         private const val PGC_PLAY_URL = "https://api.bilibili.com/pgc/player/web/playurl"
+        private const val HEARTBEAT_URL = "https://api.bilibili.com/x/click-interface/web/heartbeat"
         private const val ANDROID_APP_KEY = "1d8b6e7d45233436"
         private const val ANDROID_BUILD = "8290300"
         private const val ANDROID_APP_VERSION = "8.29.0"
