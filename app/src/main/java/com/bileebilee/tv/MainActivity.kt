@@ -65,8 +65,11 @@ class MainActivity : Activity() {
     private lateinit var historyGrid: GridLayout
     private lateinit var moreHistoryButton: Button
     private lateinit var livePanel: LinearLayout
+    private lateinit var liveTitle: TextView
     private lateinit var liveStatus: TextView
     private lateinit var liveGrid: GridLayout
+    private lateinit var followingLiveButton: Button
+    private lateinit var popularLiveButton: Button
     private lateinit var moreLiveButton: Button
     private lateinit var authClient: BilibiliAuthClient
 
@@ -95,6 +98,7 @@ class MainActivity : Activity() {
     private var historySkipped = 0
     private var liveReturnFocus: View? = null
     private var livePage = 0
+    private var liveSource = BilibiliAuthClient.LiveSource.FOLLOWING
     private var playbackHeartbeatCall: Call? = null
     private var activePlaybackTracking: BilibiliAuthClient.PlaybackTracking? = null
     private var playbackStartedAt = 0L
@@ -139,8 +143,11 @@ class MainActivity : Activity() {
         historyGrid = findViewById(R.id.history_grid)
         moreHistoryButton = findViewById(R.id.more_history_button)
         livePanel = findViewById(R.id.live_panel)
+        liveTitle = findViewById(R.id.live_title)
         liveStatus = findViewById(R.id.live_status)
         liveGrid = findViewById(R.id.live_grid)
+        followingLiveButton = findViewById(R.id.following_live_button)
+        popularLiveButton = findViewById(R.id.popular_live_button)
         moreLiveButton = findViewById(R.id.more_live_button)
         recommendationsButton.isAllCaps = false
         historyButton.isAllCaps = false
@@ -158,9 +165,17 @@ class MainActivity : Activity() {
         newQrButton.setOnClickListener { startQrLogin() }
         refreshRecommendationsButton.setOnClickListener { loadRecommendations() }
         moreHistoryButton.setOnClickListener { loadHistory() }
+        followingLiveButton.setOnClickListener {
+            selectLiveSource(BilibiliAuthClient.LiveSource.FOLLOWING)
+        }
+        popularLiveButton.setOnClickListener {
+            selectLiveSource(BilibiliAuthClient.LiveSource.POPULAR)
+        }
         moreLiveButton.setOnClickListener { loadLiveRooms() }
         refreshRecommendationsButton.isAllCaps = false
         moreHistoryButton.isAllCaps = false
+        followingLiveButton.isAllCaps = false
+        popularLiveButton.isAllCaps = false
         moreLiveButton.isAllCaps = false
         installFocusFeedback(recommendationsButton, getString(R.string.recommendations))
         installFocusFeedback(historyButton, getString(R.string.history))
@@ -259,9 +274,7 @@ class MainActivity : Activity() {
         historyPanel.visibility = View.GONE
         loginPanel.visibility = View.GONE
         livePanel.visibility = View.VISIBLE
-        authClient.resetLiveRooms()
-        moreLiveButton.requestFocus()
-        loadLiveRooms()
+        selectLiveSource(BilibiliAuthClient.LiveSource.FOLLOWING)
     }
 
     private fun hideLiveRooms() {
@@ -272,18 +285,57 @@ class MainActivity : Activity() {
         liveButton.requestFocus()
     }
 
+    private fun selectLiveSource(source: BilibiliAuthClient.LiveSource) {
+        liveRoomsCall?.cancel()
+        liveSource = source
+        livePage = 0
+        liveReturnFocus = null
+        authClient.resetLiveRooms(source)
+        liveTitle.text = getString(
+            if (source == BilibiliAuthClient.LiveSource.FOLLOWING) {
+                R.string.following_live_title
+            } else {
+                R.string.popular_live_title
+            }
+        )
+        followingLiveButton.text = if (source == BilibiliAuthClient.LiveSource.FOLLOWING) {
+            "${getString(R.string.following)} ✓"
+        } else {
+            getString(R.string.following)
+        }
+        popularLiveButton.text = if (source == BilibiliAuthClient.LiveSource.POPULAR) {
+            "${getString(R.string.popular)} ✓"
+        } else {
+            getString(R.string.popular)
+        }
+        selectedLiveSourceButton().requestFocus()
+        loadLiveRooms()
+    }
+
     private fun loadLiveRooms() {
         liveRoomsCall?.cancel()
-        liveStatus.text = "Loading popular live rooms…"
+        val source = liveSource
+        liveStatus.text = if (source == BilibiliAuthClient.LiveSource.FOLLOWING) {
+            "Loading followed live rooms…"
+        } else {
+            "Loading popular live rooms…"
+        }
         moreLiveButton.isEnabled = false
-        liveRoomsCall = authClient.fetchLiveRooms { result ->
+        liveRoomsCall = authClient.fetchLiveRooms(source) { result ->
             runOnUiThread {
+                if (source != liveSource || livePanel.visibility != View.VISIBLE) {
+                    return@runOnUiThread
+                }
                 result.fold(
                     onSuccess = { page ->
                         livePage = page.page
                         renderLiveRooms(page.rooms)
                         liveStatus.text = if (page.rooms.isEmpty()) {
-                            "No active live rooms were returned."
+                            if (source == BilibiliAuthClient.LiveSource.FOLLOWING) {
+                                "None of the accounts you follow are live right now."
+                            } else {
+                                "No active live rooms were returned."
+                            }
                         } else {
                             liveSummary()
                         }
@@ -291,13 +343,13 @@ class MainActivity : Activity() {
                         if (page.rooms.isNotEmpty()) {
                             liveGrid.post { liveGrid.getChildAt(0)?.requestFocus() }
                         } else {
-                            moreLiveButton.requestFocus()
+                            selectedLiveSourceButton().requestFocus()
                         }
                     },
                     onFailure = { error ->
                         liveStatus.text = "Live-room request failed: ${error.message.orEmpty()}"
-                        moreLiveButton.isEnabled = true
-                        moreLiveButton.requestFocus()
+                        moreLiveButton.isEnabled = false
+                        selectedLiveSourceButton().requestFocus()
                     }
                 )
             }
@@ -360,7 +412,16 @@ class MainActivity : Activity() {
     }
 
     private fun liveSummary(): String =
-        "${liveGrid.childCount} rooms • Popular page $livePage • Press OK to watch"
+        "${liveGrid.childCount} live • " +
+            "${if (liveSource == BilibiliAuthClient.LiveSource.FOLLOWING) "Following" else "Popular"} " +
+            "• Page $livePage"
+
+    private fun selectedLiveSourceButton(): Button =
+        if (liveSource == BilibiliAuthClient.LiveSource.FOLLOWING) {
+            followingLiveButton
+        } else {
+            popularLiveButton
+        }
 
     private fun restoreLiveFocus() {
         val target = liveReturnFocus

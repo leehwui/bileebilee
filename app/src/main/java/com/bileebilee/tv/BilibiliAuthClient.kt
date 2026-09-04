@@ -32,7 +32,8 @@ class BilibiliAuthClient(
     private var historyCursorViewAt = 0L
     private var historyCursorBusiness = ""
     private var historyPage = 0
-    private var livePage = 0
+    private var popularLivePage = 0
+    private var followedLivePage = 0
 
     fun generateQr(callback: (Result<QrChallenge>) -> Unit): Call {
         val request = Request.Builder()
@@ -196,34 +197,58 @@ class BilibiliAuthClient(
         callback: (Result<String>) -> Unit
     ): Call = fetchArchiveVideoUrl(video.aid, video.cid, callback)
 
-    fun resetLiveRooms() {
-        livePage = 0
+    fun resetLiveRooms(source: LiveSource) {
+        when (source) {
+            LiveSource.FOLLOWING -> followedLivePage = 0
+            LiveSource.POPULAR -> popularLivePage = 0
+        }
     }
 
-    fun fetchLiveRooms(callback: (Result<LiveRoomPage>) -> Unit): Call {
-        val requestedPage = livePage + 1
-        val url = LIVE_ROOMS_URL.toHttpUrl().newBuilder()
-            .addQueryParameter("parent_area_id", "0")
-            .addQueryParameter("area_id", "0")
-            .addQueryParameter("page", requestedPage.toString())
-            .addQueryParameter("page_size", LIVE_PAGE_SIZE.toString())
-            .addQueryParameter("sort_type", "online")
-            .build()
+    fun fetchLiveRooms(
+        source: LiveSource,
+        callback: (Result<LiveRoomPage>) -> Unit
+    ): Call {
+        val requestedPage = when (source) {
+            LiveSource.FOLLOWING -> followedLivePage + 1
+            LiveSource.POPULAR -> popularLivePage + 1
+        }
+        val url = when (source) {
+            LiveSource.FOLLOWING -> FOLLOWED_LIVE_ROOMS_URL.toHttpUrl().newBuilder()
+                .addQueryParameter("page", requestedPage.toString())
+                .addQueryParameter("page_size", LIVE_PAGE_SIZE.toString())
+                .build()
+            LiveSource.POPULAR -> LIVE_ROOMS_URL.toHttpUrl().newBuilder()
+                .addQueryParameter("parent_area_id", "0")
+                .addQueryParameter("area_id", "0")
+                .addQueryParameter("page", requestedPage.toString())
+                .addQueryParameter("page_size", LIVE_PAGE_SIZE.toString())
+                .addQueryParameter("sort_type", "online")
+                .build()
+        }
         val request = authenticatedRequest(url.toString())
             .header("Referer", "https://live.bilibili.com/")
             .build()
         return enqueueJson(request, callback) { root ->
+            if (source == LiveSource.FOLLOWING && root.optInt("code", -1) == -101) {
+                error("Sign in to view followed live rooms")
+            }
             requireApiSuccess(root)
             val data = root.getJSONObject("data")
-            val list = data.optJSONArray("list")
+            val list = when (source) {
+                LiveSource.FOLLOWING -> data.optJSONArray("rooms") ?: data.optJSONArray("list")
+                LiveSource.POPULAR -> data.optJSONArray("list")
+            }
             val rooms = buildList {
                 if (list != null) {
                     for (index in 0 until list.length()) {
                         val item = list.optJSONObject(index) ?: continue
-                        val roomId = item.optLong("roomid")
+                        val roomId = item.optLong("roomid").takeIf { it > 0L }
+                            ?: item.optLong("room_id")
                         if (roomId <= 0L) continue
-                        val cover = item.optString("cover")
+                        val cover = item.optString("user_cover")
+                            .ifBlank { item.optString("cover") }
                             .ifBlank { item.optString("system_cover") }
+                            .ifBlank { item.optString("keyframe") }
                             .replace("http://", "https://")
                         add(
                             LiveRoom(
@@ -232,17 +257,21 @@ class BilibiliAuthClient(
                                 coverUrl = cover,
                                 anchor = item.optString("uname"),
                                 popularity = item.optLong("online"),
-                                parentArea = item.optString("parent_name"),
+                                parentArea = item.optString("parent_name")
+                                    .ifBlank { item.optString("parent_area_name") },
                                 area = item.optString("area_name")
                             )
                         )
                     }
                 }
             }
-            livePage = requestedPage
+            when (source) {
+                LiveSource.FOLLOWING -> followedLivePage = requestedPage
+                LiveSource.POPULAR -> popularLivePage = requestedPage
+            }
             LiveRoomPage(
                 rooms = rooms,
-                page = livePage,
+                page = requestedPage,
                 hasMore = rooms.size >= LIVE_PAGE_SIZE
             )
         }
@@ -574,6 +603,10 @@ class BilibiliAuthClient(
         val page: Int,
         val hasMore: Boolean
     )
+    enum class LiveSource {
+        FOLLOWING,
+        POPULAR
+    }
     data class HistoryItem(
         val aid: Long,
         val cid: Long,
@@ -617,6 +650,8 @@ class BilibiliAuthClient(
         private const val FEED_URL = "https://app.bilibili.com/x/v2/feed/index"
         private const val LIVE_ROOMS_URL =
             "https://api.live.bilibili.com/room/v3/area/getRoomList"
+        private const val FOLLOWED_LIVE_ROOMS_URL =
+            "https://api.live.bilibili.com/xlive/web-ucenter/v1/xfetter/GetWebList"
         private const val LIVE_PLAY_URL =
             "https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo"
         private const val HISTORY_URL = "https://api.bilibili.com/x/web-interface/history/cursor"

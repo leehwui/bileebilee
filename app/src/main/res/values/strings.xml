@@ -3,7 +3,10 @@
     <string name="app_name">Bileebilee</string>
     <string name="diagnostics_title">Bileebilee device check</string>
     <string name="live">Live</string>
-    <string name="live_title">Popular live rooms</string>
+    <string name="following_live_title">Following live</string>
+    <string name="popular_live_title">Popular live rooms</string>
+    <string name="following">Following</string>
+    <string name="popular">Popular</string>
     <string name="more_live_rooms">More rooms</string>
     <string name="recommendations">Recommendations</string>
     <string name="recommendations_title">Recommended for you</string>
