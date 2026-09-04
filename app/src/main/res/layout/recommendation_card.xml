@@ -2,16 +2,16 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_margin="10dp"
+    android:layout_margin="6dp"
     android:background="@drawable/recommendation_card_background"
     android:clickable="true"
     android:focusable="true"
     android:orientation="vertical"
-    android:padding="8dp">
+    android:padding="6dp">
 
     <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="118dp">
+        android:layout_height="102dp">
 
         <ImageView
             android:id="@+id/recommendation_cover"
@@ -38,21 +38,21 @@
     <TextView
         android:id="@+id/recommendation_title"
         android:layout_width="match_parent"
-        android:layout_height="44dp"
-        android:layout_marginTop="7dp"
+        android:layout_height="38dp"
+        android:layout_marginTop="5dp"
         android:ellipsize="end"
         android:maxLines="2"
         android:textColor="#FFFFFF"
-        android:textSize="16sp"
+        android:textSize="15sp"
         android:textStyle="bold" />
 
     <TextView
         android:id="@+id/recommendation_meta"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="3dp"
+        android:layout_marginTop="2dp"
         android:ellipsize="end"
         android:maxLines="1"
         android:textColor="#BFC0C5"
-        android:textSize="13sp" />
+        android:textSize="12sp" />
 </LinearLayout>

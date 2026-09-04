@@ -16,6 +16,7 @@ import android.widget.Button
 import android.widget.GridLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -46,6 +47,8 @@ class MainActivity : Activity() {
     private lateinit var liveButton: Button
     private lateinit var loginButton: Button
     private lateinit var loginPanel: LinearLayout
+    private lateinit var loginDetails: LinearLayout
+    private lateinit var loginTitle: TextView
     private lateinit var qrImage: ImageView
     private lateinit var loginStatus: TextView
     private lateinit var newQrButton: Button
@@ -53,15 +56,18 @@ class MainActivity : Activity() {
     private lateinit var playerHint: TextView
     private lateinit var recommendationsPanel: LinearLayout
     private lateinit var recommendationsStatus: TextView
+    private lateinit var recommendationsScroll: ScrollView
     private lateinit var recommendationsGrid: GridLayout
     private lateinit var refreshRecommendationsButton: Button
     private lateinit var historyPanel: LinearLayout
     private lateinit var historyStatus: TextView
+    private lateinit var historyScroll: ScrollView
     private lateinit var historyGrid: GridLayout
     private lateinit var moreHistoryButton: Button
     private lateinit var livePanel: LinearLayout
     private lateinit var liveTitle: TextView
     private lateinit var liveStatus: TextView
+    private lateinit var liveScroll: ScrollView
     private lateinit var liveGrid: GridLayout
     private lateinit var followingLiveButton: Button
     private lateinit var popularLiveButton: Button
@@ -84,6 +90,10 @@ class MainActivity : Activity() {
     private var videoCall: Call? = null
     private var playbackReturnScreen = PlaybackReturnScreen.RECOMMENDATIONS
     private var currentBrowseScreen = BrowseScreen.RECOMMENDATIONS
+    private var currentAccount: BilibiliAuthClient.Account? = null
+    private var accountCheckComplete = false
+    private var accountCheckError: String? = null
+    private var pendingTabSelection: Runnable? = null
     private var recommendationReturnFocus: View? = null
     private var recommendationPage = 0
     private var recommendationFeedSignedIn = false
@@ -124,20 +134,25 @@ class MainActivity : Activity() {
         liveButton = findViewById(R.id.live_button)
         loginButton = findViewById(R.id.login_button)
         loginPanel = findViewById(R.id.login_panel)
+        loginDetails = findViewById(R.id.login_details)
+        loginTitle = findViewById(R.id.login_title)
         qrImage = findViewById(R.id.qr_image)
         loginStatus = findViewById(R.id.login_status)
         newQrButton = findViewById(R.id.new_qr_button)
         recommendationsPanel = findViewById(R.id.recommendations_panel)
         recommendationsStatus = findViewById(R.id.recommendations_status)
+        recommendationsScroll = findViewById(R.id.recommendations_scroll)
         recommendationsGrid = findViewById(R.id.recommendations_grid)
         refreshRecommendationsButton = findViewById(R.id.refresh_recommendations_button)
         historyPanel = findViewById(R.id.history_panel)
         historyStatus = findViewById(R.id.history_status)
+        historyScroll = findViewById(R.id.history_scroll)
         historyGrid = findViewById(R.id.history_grid)
         moreHistoryButton = findViewById(R.id.more_history_button)
         livePanel = findViewById(R.id.live_panel)
         liveTitle = findViewById(R.id.live_title)
         liveStatus = findViewById(R.id.live_status)
+        liveScroll = findViewById(R.id.live_scroll)
         liveGrid = findViewById(R.id.live_grid)
         followingLiveButton = findViewById(R.id.following_live_button)
         popularLiveButton = findViewById(R.id.popular_live_button)
@@ -151,10 +166,10 @@ class MainActivity : Activity() {
         playerHint = findViewById(R.id.player_hint)
         authClient = BilibiliAuthClient(this, httpClient)
 
-        recommendationsButton.setOnClickListener { showRecommendations() }
-        historyButton.setOnClickListener { showHistory() }
-        liveButton.setOnClickListener { showLiveRooms() }
-        loginButton.setOnClickListener { startQrLogin() }
+        recommendationsButton.setOnClickListener { showRecommendations(focusContent = false) }
+        historyButton.setOnClickListener { showHistory(focusContent = false) }
+        liveButton.setOnClickListener { showLiveRooms(focusContent = false) }
+        loginButton.setOnClickListener { showAccount() }
         newQrButton.setOnClickListener { startQrLogin() }
         refreshRecommendationsButton.setOnClickListener { loadRecommendations() }
         moreHistoryButton.setOnClickListener { loadHistory() }
@@ -170,14 +185,15 @@ class MainActivity : Activity() {
         followingLiveButton.isAllCaps = false
         popularLiveButton.isAllCaps = false
         moreLiveButton.isAllCaps = false
-        installFocusFeedback(recommendationsButton)
-        installFocusFeedback(historyButton)
-        installFocusFeedback(liveButton)
-        installFocusFeedback(loginButton)
+        installNavigationTab(recommendationsButton, BrowseScreen.RECOMMENDATIONS)
+        installNavigationTab(historyButton, BrowseScreen.HISTORY)
+        installNavigationTab(liveButton, BrowseScreen.LIVE)
+        installNavigationTab(loginButton, BrowseScreen.ACCOUNT)
         installFocusFeedback(newQrButton)
 
         checkAccount()
-        showRecommendations()
+        showRecommendations(focusContent = false)
+        recommendationsButton.requestFocus()
     }
 
     private fun installFocusFeedback(button: Button) {
@@ -190,7 +206,36 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun showRecommendations() {
+    private fun installNavigationTab(button: Button, screen: BrowseScreen) {
+        button.setOnFocusChangeListener { _, hasFocus ->
+            pendingTabSelection?.let(mainHandler::removeCallbacks)
+            pendingTabSelection = null
+            if (hasFocus && currentBrowseScreen != screen) {
+                Runnable {
+                    if (button.hasFocus()) showBrowseScreen(screen)
+                }.also { selection ->
+                    pendingTabSelection = selection
+                    mainHandler.postDelayed(selection, TAB_SWITCH_DELAY_MS)
+                }
+            }
+        }
+    }
+
+    private fun showBrowseScreen(screen: BrowseScreen) {
+        when (screen) {
+            BrowseScreen.RECOMMENDATIONS -> showRecommendations(focusContent = false)
+            BrowseScreen.HISTORY -> showHistory(focusContent = false)
+            BrowseScreen.LIVE -> showLiveRooms(focusContent = false)
+            BrowseScreen.ACCOUNT -> showAccount()
+        }
+    }
+
+    private fun leaveAccountIfNeeded() {
+        if (currentBrowseScreen == BrowseScreen.ACCOUNT) cancelQrLogin()
+    }
+
+    private fun showRecommendations(focusContent: Boolean = true) {
+        leaveAccountIfNeeded()
         loginPanel.visibility = View.GONE
         historyPanel.visibility = View.GONE
         livePanel.visibility = View.GONE
@@ -198,15 +243,15 @@ class MainActivity : Activity() {
         currentBrowseScreen = BrowseScreen.RECOMMENDATIONS
         updateNavigation(recommendationsButton)
         if (recommendationsGrid.childCount == 0) {
-            recommendationsButton.requestFocus()
             loadRecommendations()
         } else {
             recommendationsStatus.text = recommendationSummary()
-            restoreRecommendationFocus()
+            if (focusContent) restoreRecommendationFocus()
         }
     }
 
-    private fun showHistory() {
+    private fun showHistory(focusContent: Boolean = true) {
+        leaveAccountIfNeeded()
         recommendationsPanel.visibility = View.GONE
         loginPanel.visibility = View.GONE
         livePanel.visibility = View.GONE
@@ -215,11 +260,10 @@ class MainActivity : Activity() {
         updateNavigation(historyButton)
         if (historyGrid.childCount == 0) {
             authClient.resetHistory()
-            historyButton.requestFocus()
             loadHistory()
         } else {
             historyStatus.text = historySummary()
-            restoreHistoryFocus()
+            if (focusContent) restoreHistoryFocus()
         }
     }
 
@@ -229,7 +273,8 @@ class MainActivity : Activity() {
         showRecommendations()
     }
 
-    private fun showLiveRooms() {
+    private fun showLiveRooms(focusContent: Boolean = true) {
+        leaveAccountIfNeeded()
         recommendationsPanel.visibility = View.GONE
         historyPanel.visibility = View.GONE
         loginPanel.visibility = View.GONE
@@ -237,11 +282,10 @@ class MainActivity : Activity() {
         currentBrowseScreen = BrowseScreen.LIVE
         updateNavigation(liveButton)
         if (liveGrid.childCount == 0) {
-            liveButton.requestFocus()
             selectLiveSource(BilibiliAuthClient.LiveSource.FOLLOWING)
         } else {
             liveStatus.text = liveSummary()
-            restoreLiveFocus()
+            if (focusContent) restoreLiveFocus()
         }
     }
 
@@ -258,6 +302,10 @@ class MainActivity : Activity() {
         liveButton.isActivated = activeButton === liveButton
         loginButton.isActivated = activeButton === loginButton
     }
+
+    private fun navigationHasFocus(): Boolean =
+        recommendationsButton.hasFocus() || historyButton.hasFocus() ||
+            liveButton.hasFocus() || loginButton.hasFocus()
 
     private fun selectLiveSource(source: BilibiliAuthClient.LiveSource) {
         liveRoomsCall?.cancel()
@@ -282,7 +330,7 @@ class MainActivity : Activity() {
         } else {
             getString(R.string.popular)
         }
-        selectedLiveSourceButton().requestFocus()
+        if (!navigationHasFocus()) selectedLiveSourceButton().requestFocus()
         loadLiveRooms()
     }
 
@@ -314,16 +362,16 @@ class MainActivity : Activity() {
                             liveSummary()
                         }
                         moreLiveButton.isEnabled = page.hasMore
-                        if (page.rooms.isNotEmpty()) {
+                        if (page.rooms.isNotEmpty() && !navigationHasFocus()) {
                             liveGrid.post { liveGrid.getChildAt(0)?.requestFocus() }
-                        } else {
+                        } else if (!navigationHasFocus()) {
                             selectedLiveSourceButton().requestFocus()
                         }
                     },
                     onFailure = { error ->
                         liveStatus.text = "Live-room request failed: ${error.message.orEmpty()}"
                         moreLiveButton.isEnabled = false
-                        selectedLiveSourceButton().requestFocus()
+                        if (!navigationHasFocus()) selectedLiveSourceButton().requestFocus()
                     }
                 )
             }
@@ -370,7 +418,10 @@ class MainActivity : Activity() {
                 playLiveRoom(room)
             }
             card.setOnFocusChangeListener { view, hasFocus ->
-                if (hasFocus) liveReturnFocus = view
+                if (hasFocus) {
+                    liveReturnFocus = view
+                    snapGridToFocusedRow(liveScroll, liveGrid, index)
+                }
                 view.animate()
                     .scaleX(if (hasFocus) 1.055f else 1f)
                     .scaleY(if (hasFocus) 1.055f else 1f)
@@ -458,16 +509,16 @@ class MainActivity : Activity() {
                             historySummary()
                         }
                         moreHistoryButton.isEnabled = page.hasMore
-                        if (page.items.isNotEmpty()) {
+                        if (page.items.isNotEmpty() && !navigationHasFocus()) {
                             historyGrid.post { historyGrid.getChildAt(0)?.requestFocus() }
-                        } else {
+                        } else if (!navigationHasFocus()) {
                             moreHistoryButton.requestFocus()
                         }
                     },
                     onFailure = { error ->
                         historyStatus.text = "History request failed: ${error.message.orEmpty()}"
                         moreHistoryButton.isEnabled = true
-                        moreHistoryButton.requestFocus()
+                        if (!navigationHasFocus()) moreHistoryButton.requestFocus()
                     }
                 )
             }
@@ -513,7 +564,10 @@ class MainActivity : Activity() {
                 playHistory(item)
             }
             card.setOnFocusChangeListener { view, hasFocus ->
-                if (hasFocus) historyReturnFocus = view
+                if (hasFocus) {
+                    historyReturnFocus = view
+                    snapGridToFocusedRow(historyScroll, historyGrid, index)
+                }
                 view.animate()
                     .scaleX(if (hasFocus) 1.055f else 1f)
                     .scaleY(if (hasFocus) 1.055f else 1f)
@@ -624,14 +678,14 @@ class MainActivity : Activity() {
                         } else {
                             recommendationSummary()
                         }
-                        if (page.videos.isNotEmpty()) {
+                        if (page.videos.isNotEmpty() && !navigationHasFocus()) {
                             recommendationsGrid.post { recommendationsGrid.getChildAt(0)?.requestFocus() }
                         }
                     },
                     onFailure = { error ->
                         recommendationsStatus.text =
                             "Recommendation request failed: ${error.message.orEmpty()}"
-                        refreshRecommendationsButton.requestFocus()
+                        if (!navigationHasFocus()) refreshRecommendationsButton.requestFocus()
                     }
                 )
             }
@@ -671,7 +725,10 @@ class MainActivity : Activity() {
                 playRecommendation(video)
             }
             card.setOnFocusChangeListener { view, hasFocus ->
-                if (hasFocus) recommendationReturnFocus = view
+                if (hasFocus) {
+                    recommendationReturnFocus = view
+                    snapGridToFocusedRow(recommendationsScroll, recommendationsGrid, index)
+                }
                 view.animate()
                     .scaleX(if (hasFocus) 1.055f else 1f)
                     .scaleY(if (hasFocus) 1.055f else 1f)
@@ -762,6 +819,18 @@ class MainActivity : Activity() {
         return usableWidth / GRID_COLUMN_COUNT - dp(CARD_MARGIN_DP * 2)
     }
 
+    private fun snapGridToFocusedRow(scrollView: ScrollView, grid: GridLayout, index: Int) {
+        val focusedRow = index / GRID_COLUMN_COUNT
+        val firstVisibleRow = (focusedRow - 1).coerceAtLeast(0)
+        val anchor = grid.getChildAt(firstVisibleRow * GRID_COLUMN_COUNT) ?: return
+        scrollView.post {
+            val targetY = anchor.top.coerceAtLeast(0)
+            if (kotlin.math.abs(scrollView.scrollY - targetY) > dp(2)) {
+                scrollView.smoothScrollTo(0, targetY)
+            }
+        }
+    }
+
     private fun recommendationSummary(): String {
         val session = if (recommendationFeedSignedIn) "signed in" else "guest"
         return "${recommendationsGrid.childCount} videos • Mobile $session • " +
@@ -801,31 +870,105 @@ class MainActivity : Activity() {
 
     private fun checkAccount() {
         accountCall?.cancel()
+        accountCheckComplete = false
+        accountCheckError = null
         accountCall = authClient.checkSession { result ->
             runOnUiThread {
                 result.fold(
                     onSuccess = { account ->
+                        currentAccount = account
+                        accountCheckComplete = true
                         loginButton.contentDescription = account?.let {
                             "Account, signed in as ${it.name}"
                         } ?: "Account, not signed in"
+                        if (currentBrowseScreen == BrowseScreen.ACCOUNT) {
+                            account?.let(::showSignedInAccount) ?: startQrLogin()
+                        }
                     },
                     onFailure = { error ->
+                        currentAccount = null
+                        accountCheckComplete = true
+                        accountCheckError = error.message.orEmpty()
                         loginButton.contentDescription =
                             "Account check failed: ${error.message.orEmpty()}"
+                        if (currentBrowseScreen == BrowseScreen.ACCOUNT) {
+                            showAccountError(error.message.orEmpty())
+                        }
                     }
                 )
             }
         }
     }
 
+    private fun showAccount() {
+        recommendationsPanel.visibility = View.GONE
+        historyPanel.visibility = View.GONE
+        livePanel.visibility = View.GONE
+        loginPanel.visibility = View.VISIBLE
+        currentBrowseScreen = BrowseScreen.ACCOUNT
+        updateNavigation(loginButton)
+        when {
+            !accountCheckComplete -> showAccountChecking()
+            currentAccount != null -> showSignedInAccount(currentAccount!!)
+            accountCheckError != null -> showAccountError(accountCheckError.orEmpty())
+            else -> startQrLogin()
+        }
+    }
+
+    private fun showAccountChecking() {
+        cancelQrLogin()
+        qrImage.visibility = View.GONE
+        setLoginDetailsStartMargin(0)
+        loginTitle.text = getString(R.string.account_title)
+        loginStatus.text = getString(R.string.account_checking)
+        newQrButton.visibility = View.GONE
+    }
+
+    private fun showSignedInAccount(account: BilibiliAuthClient.Account) {
+        cancelQrLogin()
+        qrImage.visibility = View.GONE
+        setLoginDetailsStartMargin(0)
+        loginTitle.text = getString(R.string.account_title)
+        loginStatus.text = getString(R.string.account_signed_in, account.name, account.mid)
+        newQrButton.text = getString(R.string.use_another_account)
+        newQrButton.isEnabled = true
+        newQrButton.visibility = View.VISIBLE
+    }
+
+    private fun showAccountError(message: String) {
+        cancelQrLogin()
+        qrImage.visibility = View.GONE
+        setLoginDetailsStartMargin(0)
+        loginTitle.text = getString(R.string.account_title)
+        loginStatus.text = "Could not check your account: $message"
+        newQrButton.text = getString(R.string.new_qr_code)
+        newQrButton.isEnabled = true
+        newQrButton.visibility = View.VISIBLE
+    }
+
+    private fun setLoginDetailsStartMargin(marginDp: Int) {
+        (loginDetails.layoutParams as LinearLayout.LayoutParams).let { params ->
+            params.marginStart = dp(marginDp)
+            loginDetails.layoutParams = params
+        }
+    }
+
     private fun startQrLogin() {
         cancelQrLogin()
+        recommendationsPanel.visibility = View.GONE
+        historyPanel.visibility = View.GONE
+        livePanel.visibility = View.GONE
+        currentBrowseScreen = BrowseScreen.ACCOUNT
         updateNavigation(loginButton)
         loginPanel.visibility = View.VISIBLE
+        qrImage.visibility = View.VISIBLE
         qrImage.setImageDrawable(null)
+        setLoginDetailsStartMargin(36)
+        loginTitle.text = getString(R.string.qr_login_title)
         loginStatus.text = "Requesting a QR code…"
+        newQrButton.text = getString(R.string.new_qr_code)
+        newQrButton.visibility = View.VISIBLE
         newQrButton.isEnabled = false
-        newQrButton.requestFocus()
 
         qrCall = authClient.generateQr { result ->
             runOnUiThread {
@@ -882,13 +1025,13 @@ class MainActivity : Activity() {
                             BilibiliAuthClient.QrState.AUTHENTICATED -> {
                                 qrKey = null
                                 mainHandler.postDelayed({
-                                    hideQrLogin()
+                                    loginStatus.text = "Signed in. Loading your account…"
                                     checkAccount()
-                                }, 900L)
+                                }, 500L)
                             }
                             BilibiliAuthClient.QrState.EXPIRED -> {
                                 qrKey = null
-                                newQrButton.requestFocus()
+                                if (!navigationHasFocus()) newQrButton.requestFocus()
                             }
                             else -> scheduleQrPoll()
                         }
@@ -909,23 +1052,10 @@ class MainActivity : Activity() {
         qrKey = null
     }
 
-    private fun hideQrLogin() {
+    private fun hideAccount() {
         cancelQrLogin()
         loginPanel.visibility = View.GONE
-        when (currentBrowseScreen) {
-            BrowseScreen.RECOMMENDATIONS -> {
-                updateNavigation(recommendationsButton)
-                recommendationsButton.requestFocus()
-            }
-            BrowseScreen.HISTORY -> {
-                updateNavigation(historyButton)
-                historyButton.requestFocus()
-            }
-            BrowseScreen.LIVE -> {
-                updateNavigation(liveButton)
-                liveButton.requestFocus()
-            }
-        }
+        showRecommendations()
     }
 
     @androidx.annotation.OptIn(markerClass = [UnstableApi::class])
@@ -1077,7 +1207,7 @@ class MainActivity : Activity() {
             return true
         }
         if (keyCode == KeyEvent.KEYCODE_BACK && loginPanel.visibility == View.VISIBLE) {
-            hideQrLogin()
+            hideAccount()
             return true
         }
         if (keyCode == KeyEvent.KEYCODE_BACK && historyPanel.visibility == View.VISIBLE) {
@@ -1102,7 +1232,7 @@ class MainActivity : Activity() {
                 PlaybackReturnScreen.LIVE -> restoreLiveFocus()
             }
         } else if (loginPanel.visibility == View.VISIBLE) {
-            hideQrLogin()
+            hideAccount()
         } else if (historyPanel.visibility == View.VISIBLE) {
             hideHistory()
         } else if (livePanel.visibility == View.VISIBLE) {
@@ -1113,6 +1243,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        pendingTabSelection?.let(mainHandler::removeCallbacks)
         cancelQrLogin()
         accountCall?.cancel()
         recommendationsCall?.cancel()
@@ -1136,19 +1267,21 @@ class MainActivity : Activity() {
     private enum class BrowseScreen {
         RECOMMENDATIONS,
         HISTORY,
-        LIVE
+        LIVE,
+        ACCOUNT
     }
 
     private companion object {
         const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 5.1; BileebileeTV/0.1) AppleWebKit/537.36 Mobile Safari/537.36"
         const val QR_POLL_INTERVAL_MS = 2_000L
+        const val TAB_SWITCH_DELAY_MS = 150L
         const val FIRST_HEARTBEAT_DELAY_MS = 5_000L
         const val HEARTBEAT_INTERVAL_MS = 15_000L
         const val COVER_WIDTH_PX = 640
         const val COVER_HEIGHT_PX = 360
         const val GRID_SIDE_PADDING_DP = 72
         const val GRID_COLUMN_COUNT = 4
-        const val CARD_MARGIN_DP = 10
+        const val CARD_MARGIN_DP = 6
     }
 }

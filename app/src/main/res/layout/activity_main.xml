@@ -18,7 +18,7 @@
         android:layout_height="match_parent"
         android:background="#101114"
         android:orientation="vertical"
-        android:paddingTop="112dp"
+        android:paddingTop="84dp"
         android:visibility="gone">
 
         <LinearLayout
@@ -40,41 +40,42 @@
                     android:layout_height="wrap_content"
                     android:text="@string/history_title"
                     android:textColor="#FFFFFF"
-                    android:textSize="30sp"
+                    android:textSize="26sp"
                     android:textStyle="bold" />
 
                 <TextView
                     android:id="@+id/history_status"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="5dp"
+                    android:layout_marginTop="3dp"
                     android:textColor="#BFC0C5"
-                    android:textSize="16sp" />
+                    android:textSize="14sp" />
             </LinearLayout>
 
             <Button
                 android:id="@+id/more_history_button"
                 android:layout_width="wrap_content"
-                android:layout_height="52dp"
+                android:layout_height="46dp"
                 android:background="@drawable/tv_button_background"
                 android:focusable="true"
-                android:minWidth="220dp"
-                android:paddingStart="24dp"
-                android:paddingEnd="24dp"
+                android:minWidth="190dp"
+                android:paddingStart="20dp"
+                android:paddingEnd="20dp"
                 android:text="@string/more_history"
                 android:textColor="@color/tv_button_text" />
         </LinearLayout>
 
         <ScrollView
+            android:id="@+id/history_scroll"
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_marginTop="22dp"
+            android:layout_marginTop="12dp"
             android:layout_weight="1"
             android:clipToPadding="false"
             android:fillViewport="true"
             android:paddingStart="72dp"
             android:paddingEnd="72dp"
-            android:paddingBottom="48dp">
+            android:paddingBottom="24dp">
 
             <GridLayout
                 android:id="@+id/history_grid"
@@ -92,7 +93,7 @@
         android:layout_height="match_parent"
         android:background="#101114"
         android:orientation="vertical"
-        android:paddingTop="112dp"
+        android:paddingTop="84dp"
         android:visibility="gone">
 
         <LinearLayout
@@ -115,16 +116,16 @@
                     android:layout_height="wrap_content"
                     android:text="@string/following_live_title"
                     android:textColor="#FFFFFF"
-                    android:textSize="30sp"
+                    android:textSize="26sp"
                     android:textStyle="bold" />
 
                 <TextView
                     android:id="@+id/live_status"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="5dp"
+                    android:layout_marginTop="3dp"
                     android:textColor="#BFC0C5"
-                    android:textSize="16sp" />
+                    android:textSize="14sp" />
             </LinearLayout>
 
             <LinearLayout
@@ -135,10 +136,10 @@
                 <Button
                     android:id="@+id/following_live_button"
                     android:layout_width="wrap_content"
-                    android:layout_height="52dp"
+                    android:layout_height="46dp"
                     android:background="@drawable/tv_button_background"
                     android:focusable="true"
-                    android:minWidth="170dp"
+                    android:minWidth="145dp"
                     android:nextFocusRight="@id/popular_live_button"
                     android:text="@string/following"
                     android:textColor="@color/tv_button_text" />
@@ -146,11 +147,11 @@
                 <Button
                     android:id="@+id/popular_live_button"
                     android:layout_width="wrap_content"
-                    android:layout_height="52dp"
-                    android:layout_marginStart="14dp"
+                    android:layout_height="46dp"
+                    android:layout_marginStart="10dp"
                     android:background="@drawable/tv_button_background"
                     android:focusable="true"
-                    android:minWidth="170dp"
+                    android:minWidth="145dp"
                     android:nextFocusLeft="@id/following_live_button"
                     android:nextFocusRight="@id/more_live_button"
                     android:text="@string/popular"
@@ -159,11 +160,11 @@
                 <Button
                     android:id="@+id/more_live_button"
                     android:layout_width="wrap_content"
-                    android:layout_height="52dp"
-                    android:layout_marginStart="14dp"
+                    android:layout_height="46dp"
+                    android:layout_marginStart="10dp"
                     android:background="@drawable/tv_button_background"
                     android:focusable="true"
-                    android:minWidth="190dp"
+                    android:minWidth="165dp"
                     android:nextFocusLeft="@id/popular_live_button"
                     android:paddingStart="20dp"
                     android:paddingEnd="20dp"
@@ -173,15 +174,16 @@
         </LinearLayout>
 
         <ScrollView
+            android:id="@+id/live_scroll"
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_marginTop="22dp"
+            android:layout_marginTop="12dp"
             android:layout_weight="1"
             android:clipToPadding="false"
             android:fillViewport="true"
             android:paddingStart="72dp"
             android:paddingEnd="72dp"
-            android:paddingBottom="48dp">
+            android:paddingBottom="24dp">
 
             <GridLayout
                 android:id="@+id/live_grid"
@@ -212,7 +214,7 @@
         android:layout_height="match_parent"
         android:background="#101114"
         android:orientation="vertical"
-        android:paddingTop="112dp"
+        android:paddingTop="84dp"
         android:visibility="gone">
 
         <LinearLayout
@@ -234,27 +236,27 @@
                     android:layout_height="wrap_content"
                     android:text="@string/recommendations_title"
                     android:textColor="#FFFFFF"
-                    android:textSize="30sp"
+                    android:textSize="26sp"
                     android:textStyle="bold" />
 
                 <TextView
                     android:id="@+id/recommendations_status"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="5dp"
+                    android:layout_marginTop="3dp"
                     android:textColor="#BFC0C5"
-                    android:textSize="16sp" />
+                    android:textSize="14sp" />
             </LinearLayout>
 
             <Button
                 android:id="@+id/refresh_recommendations_button"
                 android:layout_width="wrap_content"
-                android:layout_height="52dp"
+                android:layout_height="46dp"
                 android:background="@drawable/tv_button_background"
                 android:focusable="true"
-                android:minWidth="250dp"
-                android:paddingStart="24dp"
-                android:paddingEnd="24dp"
+                android:minWidth="220dp"
+                android:paddingStart="20dp"
+                android:paddingEnd="20dp"
                 android:text="@string/refresh_recommendations"
                 android:textColor="@color/tv_button_text" />
         </LinearLayout>
@@ -263,13 +265,13 @@
             android:id="@+id/recommendations_scroll"
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_marginTop="22dp"
+            android:layout_marginTop="12dp"
             android:layout_weight="1"
             android:clipToPadding="false"
             android:fillViewport="true"
             android:paddingStart="72dp"
             android:paddingEnd="72dp"
-            android:paddingBottom="48dp">
+            android:paddingBottom="24dp">
 
             <GridLayout
                 android:id="@+id/recommendations_grid"
@@ -284,16 +286,17 @@
     <LinearLayout
         android:id="@+id/navigation_bar"
         android:layout_width="match_parent"
-        android:layout_height="88dp"
+        android:layout_height="72dp"
         android:layout_gravity="top"
         android:background="#F5101114"
         android:clipChildren="false"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingStart="72dp"
-        android:paddingTop="14dp"
+        android:paddingTop="10dp"
         android:paddingEnd="72dp"
-        android:paddingBottom="14dp">
+        android:paddingBottom="10dp"
+        android:elevation="24dp">
 
         <TextView
             android:layout_width="140dp"
@@ -301,29 +304,31 @@
             android:singleLine="true"
             android:text="@string/app_name"
             android:textColor="#FFFFFF"
-            android:textSize="26sp"
+            android:textSize="24sp"
             android:textStyle="bold" />
 
         <Button
             android:id="@+id/recommendations_button"
-            android:layout_width="0dp"
-            android:layout_height="54dp"
-            android:layout_weight="1"
+            android:layout_width="116dp"
+            android:layout_height="52dp"
             android:background="@drawable/tab_button_background"
             android:focusable="true"
+            android:minWidth="0dp"
             android:nextFocusRight="@id/history_button"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
             android:text="@string/for_you"
             android:textColor="@color/tv_button_text"
             android:textSize="16sp" />
 
         <Button
             android:id="@+id/history_button"
-            android:layout_width="0dp"
-            android:layout_height="54dp"
-            android:layout_weight="1"
-            android:layout_marginStart="12dp"
+            android:layout_width="104dp"
+            android:layout_height="52dp"
+            android:layout_marginStart="2dp"
             android:background="@drawable/tab_button_background"
             android:focusable="true"
+            android:minWidth="0dp"
             android:nextFocusLeft="@id/recommendations_button"
             android:nextFocusRight="@id/live_button"
             android:text="@string/history"
@@ -332,12 +337,12 @@
 
         <Button
             android:id="@+id/live_button"
-            android:layout_width="0dp"
-            android:layout_height="54dp"
-            android:layout_weight="1"
-            android:layout_marginStart="12dp"
+            android:layout_width="92dp"
+            android:layout_height="52dp"
+            android:layout_marginStart="2dp"
             android:background="@drawable/tab_button_background"
             android:focusable="true"
+            android:minWidth="0dp"
             android:nextFocusLeft="@id/history_button"
             android:nextFocusRight="@id/login_button"
             android:text="@string/live"
@@ -346,12 +351,13 @@
 
         <Button
             android:id="@+id/login_button"
-            android:layout_width="0dp"
-            android:layout_height="54dp"
-            android:layout_weight="1"
-            android:layout_marginStart="12dp"
+            android:layout_width="116dp"
+            android:layout_height="52dp"
+            android:layout_marginStart="2dp"
             android:background="@drawable/tab_button_background"
             android:focusable="true"
+            android:minWidth="0dp"
+            android:nextFocusDown="@id/new_qr_button"
             android:nextFocusLeft="@id/live_button"
             android:text="@string/account"
             android:textColor="@color/tv_button_text"
@@ -362,11 +368,14 @@
         android:id="@+id/login_panel"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#F2101114"
-        android:focusable="true"
+        android:background="#101114"
+        android:focusable="false"
         android:gravity="center"
         android:orientation="horizontal"
-        android:padding="48dp"
+        android:paddingStart="72dp"
+        android:paddingTop="84dp"
+        android:paddingEnd="72dp"
+        android:paddingBottom="36dp"
         android:visibility="gone">
 
         <ImageView
@@ -375,15 +384,18 @@
             android:layout_height="320dp"
             android:background="#FFFFFF"
             android:contentDescription="@string/qr_login_title"
-            android:padding="12dp" />
+            android:padding="12dp"
+            android:visibility="gone" />
 
         <LinearLayout
+            android:id="@+id/login_details"
             android:layout_width="440dp"
             android:layout_height="wrap_content"
             android:layout_marginStart="36dp"
             android:orientation="vertical">
 
             <TextView
+                android:id="@+id/login_title"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/qr_login_title"
@@ -408,6 +420,7 @@
                 android:background="@drawable/tv_button_background"
                 android:focusable="true"
                 android:minWidth="300dp"
+                android:nextFocusUp="@id/login_button"
                 android:paddingStart="28dp"
                 android:paddingEnd="28dp"
                 android:text="@string/new_qr_code"

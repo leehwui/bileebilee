@@ -19,6 +19,10 @@
     <string name="new_qr_code">Generate a new QR code</string>
     <string name="qr_login_title">Sign in to Bilibili</string>
     <string name="qr_login_instructions">Scan with the Bilibili mobile app, then confirm on your phone.</string>
+    <string name="account_title">Your Bilibili account</string>
+    <string name="account_checking">Checking your saved session…</string>
+    <string name="account_signed_in">Signed in as %1$s\nUID %2$d</string>
+    <string name="use_another_account">Sign in with another account</string>
     <string name="player_hint">Press Back to stop playback and return home.</string>
     <string name="video_player_hint">Press Back to return to recommendations.</string>
     <string name="history_player_hint">Press Back to return to watch history.</string>
