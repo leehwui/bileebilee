@@ -50,33 +50,51 @@
             android:textStyle="bold" />
 
         <LinearLayout
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
             android:orientation="horizontal">
 
             <Button
                 android:id="@+id/recommendations_button"
-                android:layout_width="wrap_content"
+                android:layout_width="0dp"
                 android:layout_height="56dp"
+                android:layout_weight="1"
                 android:background="@drawable/tv_button_background"
                 android:focusable="true"
-                android:minWidth="220dp"
-                android:nextFocusRight="@id/live_button"
+                android:minWidth="0dp"
+                android:nextFocusRight="@id/history_button"
                 android:paddingStart="28dp"
                 android:paddingEnd="28dp"
                 android:textColor="@color/tv_button_text"
                 android:text="@string/recommendations" />
 
             <Button
-                android:id="@+id/live_button"
-                android:layout_width="wrap_content"
+                android:id="@+id/history_button"
+                android:layout_width="0dp"
                 android:layout_height="56dp"
                 android:layout_marginStart="24dp"
+                android:layout_weight="1"
                 android:background="@drawable/tv_button_background"
                 android:focusable="true"
-                android:minWidth="260dp"
+                android:minWidth="0dp"
                 android:nextFocusLeft="@id/recommendations_button"
+                android:nextFocusRight="@id/live_button"
+                android:paddingStart="28dp"
+                android:paddingEnd="28dp"
+                android:text="@string/history"
+                android:textColor="@color/tv_button_text" />
+
+            <Button
+                android:id="@+id/live_button"
+                android:layout_width="0dp"
+                android:layout_height="56dp"
+                android:layout_marginStart="24dp"
+                android:layout_weight="1"
+                android:background="@drawable/tv_button_background"
+                android:focusable="true"
+                android:minWidth="0dp"
+                android:nextFocusLeft="@id/history_button"
                 android:nextFocusRight="@id/login_button"
                 android:paddingStart="28dp"
                 android:paddingEnd="28dp"
@@ -85,18 +103,93 @@
 
             <Button
                 android:id="@+id/login_button"
-                android:layout_width="wrap_content"
+                android:layout_width="0dp"
                 android:layout_height="56dp"
                 android:layout_marginStart="24dp"
+                android:layout_weight="1"
                 android:background="@drawable/tv_button_background"
                 android:focusable="true"
-                android:minWidth="240dp"
+                android:minWidth="0dp"
                 android:nextFocusLeft="@id/live_button"
                 android:paddingStart="28dp"
                 android:paddingEnd="28dp"
                 android:text="@string/qr_login"
                 android:textColor="@color/tv_button_text" />
         </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/history_panel"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#101114"
+        android:orientation="vertical"
+        android:paddingTop="36dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="56dp"
+            android:paddingEnd="56dp">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/history_title"
+                    android:textColor="#FFFFFF"
+                    android:textSize="30sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/history_status"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="5dp"
+                    android:textColor="#BFC0C5"
+                    android:textSize="16sp" />
+            </LinearLayout>
+
+            <Button
+                android:id="@+id/more_history_button"
+                android:layout_width="wrap_content"
+                android:layout_height="52dp"
+                android:background="@drawable/tv_button_background"
+                android:focusable="true"
+                android:minWidth="220dp"
+                android:paddingStart="24dp"
+                android:paddingEnd="24dp"
+                android:text="@string/more_history"
+                android:textColor="@color/tv_button_text" />
+        </LinearLayout>
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginTop="22dp"
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            android:fillViewport="true"
+            android:paddingStart="48dp"
+            android:paddingEnd="48dp"
+            android:paddingBottom="36dp">
+
+            <GridLayout
+                android:id="@+id/history_grid"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:clipChildren="false"
+                android:columnCount="4"
+                android:orientation="horizontal" />
+        </ScrollView>
     </LinearLayout>
 
     <TextView

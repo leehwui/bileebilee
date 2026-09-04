@@ -26,6 +26,10 @@ class BilibiliAuthClient(
             "osVer/${Build.VERSION.RELEASE} network/2"
     private var feedCursor = 0L
     private var feedPage = 0
+    private var historyCursorMax = 0L
+    private var historyCursorViewAt = 0L
+    private var historyCursorBusiness = ""
+    private var historyPage = 0
 
     fun generateQr(callback: (Result<QrChallenge>) -> Unit): Call {
         val request = Request.Builder()
@@ -187,23 +191,118 @@ class BilibiliAuthClient(
     fun fetchVideoUrl(
         video: Recommendation,
         callback: (Result<String>) -> Unit
-    ): Call {
-        val request = authenticatedRequest(
-            "https://api.bilibili.com/x/player/playurl" +
-                "?avid=${video.aid}&cid=${video.cid}&qn=64&fnval=0" +
-                "&platform=html5&high_quality=1"
-        )
-            .header("Referer", "https://www.bilibili.com/video/av${video.aid}")
+    ): Call = fetchArchiveVideoUrl(video.aid, video.cid, callback)
+
+    fun resetHistory() {
+        historyCursorMax = 0L
+        historyCursorViewAt = 0L
+        historyCursorBusiness = ""
+        historyPage = 0
+    }
+
+    fun fetchHistory(callback: (Result<HistoryPage>) -> Unit): Call {
+        val url = HISTORY_URL.toHttpUrl().newBuilder()
+            .addQueryParameter("max", historyCursorMax.toString())
+            .addQueryParameter("view_at", historyCursorViewAt.toString())
+            .addQueryParameter("business", historyCursorBusiness)
+            .addQueryParameter("ps", "20")
             .build()
+        val request = authenticatedRequest(url.toString()).build()
         return enqueueJson(request, callback) { root ->
             requireApiSuccess(root)
             val data = root.getJSONObject("data")
-            val durl = data.optJSONArray("durl")
-                ?: error("Progressive playback is unavailable for this video")
-            durl.optJSONObject(0)?.optString("url")
-                ?.takeIf(String::isNotBlank)
-                ?: error("Playback URL was missing")
+            val list = data.optJSONArray("list")
+            val items = buildList {
+                if (list != null) {
+                    for (index in 0 until list.length()) {
+                        val item = list.optJSONObject(index) ?: continue
+                        val history = item.optJSONObject("history") ?: continue
+                        val business = history.optString("business")
+                        val aid = history.optLong("oid")
+                        val cid = history.optLong("cid")
+                        if (business !in PLAYABLE_HISTORY_TYPES || aid <= 0L || cid <= 0L) continue
+                        add(
+                            HistoryItem(
+                                aid = aid,
+                                cid = cid,
+                                epId = history.optLong("epid"),
+                                business = business,
+                                title = item.optString("title", "Untitled video"),
+                                subtitle = item.optString("long_title"),
+                                coverUrl = item.optString("cover").replace("http://", "https://"),
+                                author = item.optString("author_name"),
+                                durationSeconds = item.optLong("duration"),
+                                progressSeconds = item.optLong("progress"),
+                                viewedAt = item.optLong("view_at")
+                            )
+                        )
+                    }
+                }
+            }
+            val cursor = data.optJSONObject("cursor")
+            if (cursor != null) {
+                historyCursorMax = cursor.optLong("max")
+                historyCursorViewAt = cursor.optLong("view_at")
+                historyCursorBusiness = cursor.optString("business")
+            }
+            historyPage += 1
+            HistoryPage(
+                items = items,
+                page = historyPage,
+                returnedCount = list?.length() ?: 0,
+                hasMore = list != null && list.length() > 0 && historyCursorViewAt > 0L
+            )
         }
+    }
+
+    fun fetchHistoryVideoUrl(
+        item: HistoryItem,
+        callback: (Result<String>) -> Unit
+    ): Call {
+        if (item.business == "pgc") {
+            val url = PGC_PLAY_URL.toHttpUrl().newBuilder()
+                .addQueryParameter("avid", item.aid.toString())
+                .addQueryParameter("cid", item.cid.toString())
+                .addQueryParameter("ep_id", item.epId.toString())
+                .addQueryParameter("qn", "64")
+                .addQueryParameter("fnval", "0")
+                .addQueryParameter("platform", "html5")
+                .build()
+            val request = authenticatedRequest(url.toString())
+                .header("Referer", "https://www.bilibili.com/bangumi/play/ep${item.epId}")
+                .build()
+            return enqueueJson(request, callback) { root ->
+                requireApiSuccess(root)
+                progressiveUrl(root.optJSONObject("result") ?: root.getJSONObject("data"))
+            }
+        }
+        return fetchArchiveVideoUrl(item.aid, item.cid, callback)
+    }
+
+    private fun fetchArchiveVideoUrl(
+        aid: Long,
+        cid: Long,
+        callback: (Result<String>) -> Unit
+    ): Call {
+        val request = authenticatedRequest(
+            "https://api.bilibili.com/x/player/playurl" +
+                "?avid=$aid&cid=$cid&qn=64&fnval=0" +
+                "&platform=html5&high_quality=1"
+        )
+            .header("Referer", "https://www.bilibili.com/video/av$aid")
+            .build()
+        return enqueueJson(request, callback) { root ->
+            requireApiSuccess(root)
+            progressiveUrl(root.getJSONObject("data"))
+        }
+    }
+
+    private fun progressiveUrl(data: JSONObject): String {
+        val durl = data.optJSONArray("durl")
+            ?: error("Progressive playback is unavailable for this video")
+        return durl.optJSONObject(0)?.optString("url")
+            ?.takeIf(String::isNotBlank)
+            ?: error("Playback URL was missing")
     }
 
     private fun authenticatedRequest(url: String): Request.Builder {
@@ -311,6 +410,25 @@ class BilibiliAuthClient(
         val page: Int,
         val signedIn: Boolean
     )
+    data class HistoryItem(
+        val aid: Long,
+        val cid: Long,
+        val epId: Long,
+        val business: String,
+        val title: String,
+        val subtitle: String,
+        val coverUrl: String,
+        val author: String,
+        val durationSeconds: Long,
+        val progressSeconds: Long,
+        val viewedAt: Long
+    )
+    data class HistoryPage(
+        val items: List<HistoryItem>,
+        val page: Int,
+        val returnedCount: Int,
+        val hasMore: Boolean
+    )
 
     enum class QrState {
         WAITING_FOR_SCAN,
@@ -325,6 +443,8 @@ class BilibiliAuthClient(
         private const val BUVID_KEY = "feed_buvid"
         private const val FEED_SESSION_KEY = "feed_session_id"
         private const val FEED_URL = "https://app.bilibili.com/x/v2/feed/index"
+        private const val HISTORY_URL = "https://api.bilibili.com/x/web-interface/history/cursor"
+        private const val PGC_PLAY_URL = "https://api.bilibili.com/pgc/player/web/playurl"
         private const val ANDROID_APP_KEY = "1d8b6e7d45233436"
         private const val ANDROID_BUILD = "8290300"
         private const val ANDROID_APP_VERSION = "8.29.0"
@@ -332,6 +452,7 @@ class BilibiliAuthClient(
             "Mozilla/5.0 (Linux; Android 5.1; BileebileeTV/0.3) " +
                 "AppleWebKit/537.36 Mobile Safari/537.36"
         private val PLAYABLE_FEED_TYPES = setOf("av", "vertical_av")
+        private val PLAYABLE_HISTORY_TYPES = setOf("archive", "pgc")
         private val LOGIN_COOKIE_NAMES = setOf(
             "DedeUserID",
             "DedeUserID__ckMd5",

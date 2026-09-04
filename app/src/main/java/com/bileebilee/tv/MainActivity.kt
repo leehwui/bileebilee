@@ -38,6 +38,9 @@ import okhttp3.Response
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 class MainActivity : Activity() {
@@ -45,6 +48,7 @@ class MainActivity : Activity() {
     private lateinit var statusText: TextView
     private lateinit var focusStatus: TextView
     private lateinit var recommendationsButton: Button
+    private lateinit var historyButton: Button
     private lateinit var liveButton: Button
     private lateinit var loginButton: Button
     private lateinit var loginPanel: LinearLayout
@@ -57,6 +61,10 @@ class MainActivity : Activity() {
     private lateinit var recommendationsStatus: TextView
     private lateinit var recommendationsGrid: GridLayout
     private lateinit var refreshRecommendationsButton: Button
+    private lateinit var historyPanel: LinearLayout
+    private lateinit var historyStatus: TextView
+    private lateinit var historyGrid: GridLayout
+    private lateinit var moreHistoryButton: Button
     private lateinit var authClient: BilibiliAuthClient
 
     private val httpClient = OkHttpClient.Builder()
@@ -71,11 +79,16 @@ class MainActivity : Activity() {
     private var qrCall: Call? = null
     private var accountCall: Call? = null
     private var recommendationsCall: Call? = null
+    private var historyCall: Call? = null
     private var videoCall: Call? = null
-    private var playbackReturnsToRecommendations = false
+    private var playbackReturnScreen = PlaybackReturnScreen.DIAGNOSTICS
     private var recommendationReturnFocus: View? = null
     private var recommendationPage = 0
     private var recommendationFeedSignedIn = false
+    private var historyReturnFocus: View? = null
+    private var historyPage = 0
+    private var historyHasMore = false
+    private var historySkipped = 0
     private val coverCalls = mutableListOf<Call>()
     private val coverCache = object : LruCache<String, Bitmap>(12 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
@@ -91,6 +104,7 @@ class MainActivity : Activity() {
         statusText = findViewById(R.id.status_text)
         focusStatus = findViewById(R.id.focus_status)
         recommendationsButton = findViewById(R.id.recommendations_button)
+        historyButton = findViewById(R.id.history_button)
         liveButton = findViewById(R.id.live_button)
         loginButton = findViewById(R.id.login_button)
         loginPanel = findViewById(R.id.login_panel)
@@ -101,7 +115,12 @@ class MainActivity : Activity() {
         recommendationsStatus = findViewById(R.id.recommendations_status)
         recommendationsGrid = findViewById(R.id.recommendations_grid)
         refreshRecommendationsButton = findViewById(R.id.refresh_recommendations_button)
+        historyPanel = findViewById(R.id.history_panel)
+        historyStatus = findViewById(R.id.history_status)
+        historyGrid = findViewById(R.id.history_grid)
+        moreHistoryButton = findViewById(R.id.more_history_button)
         recommendationsButton.isAllCaps = false
+        historyButton.isAllCaps = false
         liveButton.isAllCaps = false
         loginButton.isAllCaps = false
         newQrButton.isAllCaps = false
@@ -110,12 +129,16 @@ class MainActivity : Activity() {
         authClient = BilibiliAuthClient(this, httpClient)
 
         recommendationsButton.setOnClickListener { showRecommendations() }
+        historyButton.setOnClickListener { showHistory() }
         liveButton.setOnClickListener { startLiveStreamTest() }
         loginButton.setOnClickListener { startQrLogin() }
         newQrButton.setOnClickListener { startQrLogin() }
         refreshRecommendationsButton.setOnClickListener { loadRecommendations() }
+        moreHistoryButton.setOnClickListener { loadHistory() }
         refreshRecommendationsButton.isAllCaps = false
+        moreHistoryButton.isAllCaps = false
         installFocusFeedback(recommendationsButton, getString(R.string.recommendations))
+        installFocusFeedback(historyButton, getString(R.string.history))
         installFocusFeedback(liveButton, getString(R.string.test_live_stream))
         installFocusFeedback(loginButton, getString(R.string.qr_login))
         installFocusFeedback(newQrButton, getString(R.string.new_qr_code))
@@ -140,6 +163,7 @@ class MainActivity : Activity() {
         if (event.action == KeyEvent.ACTION_DOWN && ::focusStatus.isInitialized) {
             val focusedLabel = when (currentFocus?.id) {
                 R.id.recommendations_button -> getString(R.string.recommendations)
+                R.id.history_button -> getString(R.string.history)
                 R.id.live_button -> getString(R.string.test_live_stream)
                 R.id.login_button -> getString(R.string.qr_login)
                 R.id.new_qr_button -> getString(R.string.new_qr_code)
@@ -181,6 +205,175 @@ class MainActivity : Activity() {
         recommendationsPanel.visibility = View.GONE
         diagnosticsPanel.visibility = View.VISIBLE
         recommendationsButton.requestFocus()
+    }
+
+    private fun showHistory() {
+        diagnosticsPanel.visibility = View.GONE
+        recommendationsPanel.visibility = View.GONE
+        loginPanel.visibility = View.GONE
+        historyPanel.visibility = View.VISIBLE
+        authClient.resetHistory()
+        moreHistoryButton.requestFocus()
+        loadHistory()
+    }
+
+    private fun hideHistory() {
+        historyCall?.cancel()
+        videoCall?.cancel()
+        historyPanel.visibility = View.GONE
+        diagnosticsPanel.visibility = View.VISIBLE
+        historyButton.requestFocus()
+    }
+
+    private fun loadHistory() {
+        historyCall?.cancel()
+        historyStatus.text = "Loading account watch history…"
+        moreHistoryButton.isEnabled = false
+        historyCall = authClient.fetchHistory { result ->
+            runOnUiThread {
+                result.fold(
+                    onSuccess = { page ->
+                        historyPage = page.page
+                        historyHasMore = page.hasMore
+                        historySkipped = page.returnedCount - page.items.size
+                        renderHistory(page.items)
+                        historyStatus.text = if (page.items.isEmpty()) {
+                            if (page.returnedCount == 0) "No more watch history." else
+                                "This page has no playable video entries."
+                        } else {
+                            historySummary()
+                        }
+                        moreHistoryButton.isEnabled = page.hasMore
+                        if (page.items.isNotEmpty()) {
+                            historyGrid.post { historyGrid.getChildAt(0)?.requestFocus() }
+                        } else {
+                            moreHistoryButton.requestFocus()
+                        }
+                    },
+                    onFailure = { error ->
+                        historyStatus.text = "History request failed: ${error.message.orEmpty()}"
+                        moreHistoryButton.isEnabled = true
+                        moreHistoryButton.requestFocus()
+                    }
+                )
+            }
+        }
+    }
+
+    private fun renderHistory(items: List<BilibiliAuthClient.HistoryItem>) {
+        coverCalls.forEach(Call::cancel)
+        coverCalls.clear()
+        historyGrid.removeAllViews()
+        historyReturnFocus = null
+        val cardWidth = (resources.displayMetrics.widthPixels - dp(96)) / 4
+        items.forEach { item ->
+            val card = LayoutInflater.from(this)
+                .inflate(R.layout.recommendation_card, historyGrid, false)
+            val cover = card.findViewById<ImageView>(R.id.recommendation_cover)
+            val displayTitle = listOf(item.title, item.subtitle)
+                .filter(String::isNotBlank)
+                .joinToString(" · ")
+            card.findViewById<TextView>(R.id.recommendation_title).text = displayTitle
+            card.findViewById<TextView>(R.id.recommendation_duration).text =
+                historyProgress(item.progressSeconds, item.durationSeconds)
+            card.findViewById<TextView>(R.id.recommendation_meta).text =
+                listOf(item.author, viewedAt(item.viewedAt))
+                    .filter(String::isNotBlank)
+                    .joinToString("  •  ")
+            card.contentDescription = listOf(
+                displayTitle,
+                item.author,
+                historyProgress(item.progressSeconds, item.durationSeconds)
+            ).filter(String::isNotBlank).joinToString(", ")
+            card.setOnClickListener {
+                historyReturnFocus = card
+                playHistory(item)
+            }
+            card.setOnFocusChangeListener { view, hasFocus ->
+                view.animate()
+                    .scaleX(if (hasFocus) 1.055f else 1f)
+                    .scaleY(if (hasFocus) 1.055f else 1f)
+                    .setDuration(120L)
+                    .start()
+                view.elevation = if (hasFocus) 18f else 0f
+            }
+            historyGrid.addView(
+                card,
+                GridLayout.LayoutParams().apply {
+                    width = cardWidth
+                    height = GridLayout.LayoutParams.WRAP_CONTENT
+                }
+            )
+            loadCover(item.coverUrl, cover)
+        }
+    }
+
+    private fun historyProgress(progress: Long, duration: Long): String {
+        if (duration <= 0L) return ""
+        if (progress < 0L || progress >= duration) return "Watched • ${formatDuration(duration)}"
+        if (progress == 0L) return formatDuration(duration)
+        return "${formatDuration(progress)} / ${formatDuration(duration)}"
+    }
+
+    private fun formatDuration(seconds: Long): String {
+        val hours = seconds / 3600L
+        val minutes = (seconds % 3600L) / 60L
+        val remainingSeconds = seconds % 60L
+        return if (hours > 0L) {
+            String.format(Locale.US, "%d:%02d:%02d", hours, minutes, remainingSeconds)
+        } else {
+            String.format(Locale.US, "%d:%02d", minutes, remainingSeconds)
+        }
+    }
+
+    private fun viewedAt(timestamp: Long): String {
+        if (timestamp <= 0L) return ""
+        return SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
+            .format(Date(timestamp * 1_000L))
+    }
+
+    private fun historySummary(): String {
+        val skipped = if (historySkipped > 0) " • $historySkipped unsupported" else ""
+        val more = if (historyHasMore) " • More available" else ""
+        return "${historyGrid.childCount} playable • Page $historyPage$skipped$more"
+    }
+
+    private fun restoreHistoryFocus() {
+        val target = historyReturnFocus
+            ?.takeIf { it.parent === historyGrid }
+            ?: historyGrid.getChildAt(0)
+        target?.requestFocus()
+    }
+
+    private fun playHistory(item: BilibiliAuthClient.HistoryItem) {
+        videoCall?.cancel()
+        historyStatus.text = "Opening ${item.title}…"
+        videoCall = authClient.fetchHistoryVideoUrl(item) { result ->
+            runOnUiThread {
+                result.fold(
+                    onSuccess = { url ->
+                        playerHint.text = getString(R.string.history_player_hint)
+                        val referer = if (item.business == "pgc") {
+                            "https://www.bilibili.com/bangumi/play/ep${item.epId}"
+                        } else {
+                            "https://www.bilibili.com/video/av${item.aid}"
+                        }
+                        val resumeSeconds = item.progressSeconds.takeIf {
+                            it > 0L && (item.durationSeconds <= 0L || it < item.durationSeconds)
+                        } ?: 0L
+                        playMedia(
+                            url = url,
+                            referer = referer,
+                            returnScreen = PlaybackReturnScreen.HISTORY,
+                            startPositionMs = resumeSeconds * 1_000L
+                        )
+                    },
+                    onFailure = { error ->
+                        historyStatus.text = "Could not play history item: ${error.message.orEmpty()}"
+                    }
+                )
+            }
+        }
     }
 
     private fun loadRecommendations() {
@@ -313,7 +506,7 @@ class MainActivity : Activity() {
                         playMedia(
                             url = url,
                             referer = "https://www.bilibili.com/video/av${video.aid}",
-                            returnToRecommendations = true
+                            returnScreen = PlaybackReturnScreen.RECOMMENDATIONS
                         )
                     },
                     onFailure = { error ->
@@ -517,7 +710,7 @@ class MainActivity : Activity() {
                         playMedia(
                             url = streamUrl,
                             referer = "https://live.bilibili.com/$roomId",
-                            returnToRecommendations = false
+                            returnScreen = PlaybackReturnScreen.DIAGNOSTICS
                         )
                     }
                 }
@@ -561,7 +754,8 @@ class MainActivity : Activity() {
     private fun playMedia(
         url: String,
         referer: String,
-        returnToRecommendations: Boolean
+        returnScreen: PlaybackReturnScreen,
+        startPositionMs: Long = 0L
     ) {
         val requestHeaders = mapOf(
             "Referer" to referer,
@@ -573,7 +767,7 @@ class MainActivity : Activity() {
             .setAllowCrossProtocolRedirects(true)
 
         releasePlayer()
-        playbackReturnsToRecommendations = returnToRecommendations
+        playbackReturnScreen = returnScreen
         player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
             .build()
@@ -586,10 +780,12 @@ class MainActivity : Activity() {
                 playerView.player = exoPlayer
                 diagnosticsPanel.visibility = View.GONE
                 recommendationsPanel.visibility = View.GONE
+                historyPanel.visibility = View.GONE
                 loginPanel.visibility = View.GONE
                 playerView.visibility = View.VISIBLE
                 playerHint.visibility = View.VISIBLE
                 exoPlayer.setMediaItem(MediaItem.fromUri(url))
+                if (startPositionMs > 0L) exoPlayer.seekTo(startPositionMs)
                 exoPlayer.prepare()
                 exoPlayer.playWhenReady = true
             }
@@ -604,29 +800,42 @@ class MainActivity : Activity() {
     }
 
     private fun stopPlayback() {
-        val returnToRecommendations = playbackReturnsToRecommendations
+        val returnScreen = playbackReturnScreen
         releasePlayer()
-        playbackReturnsToRecommendations = false
-        if (returnToRecommendations) {
-            diagnosticsPanel.visibility = View.GONE
-            recommendationsPanel.visibility = View.VISIBLE
-            recommendationsStatus.text = recommendationSummary()
-        } else {
-            recommendationsPanel.visibility = View.GONE
-            diagnosticsPanel.visibility = View.VISIBLE
+        playbackReturnScreen = PlaybackReturnScreen.DIAGNOSTICS
+        diagnosticsPanel.visibility = View.GONE
+        recommendationsPanel.visibility = View.GONE
+        historyPanel.visibility = View.GONE
+        when (returnScreen) {
+            PlaybackReturnScreen.RECOMMENDATIONS -> {
+                recommendationsPanel.visibility = View.VISIBLE
+                recommendationsStatus.text = recommendationSummary()
+            }
+            PlaybackReturnScreen.HISTORY -> {
+                historyPanel.visibility = View.VISIBLE
+                historyStatus.text = historySummary()
+            }
+            PlaybackReturnScreen.DIAGNOSTICS -> diagnosticsPanel.visibility = View.VISIBLE
         }
     }
 
     private fun showPlaybackError(error: PlaybackException) {
-        val returnToRecommendations = playbackReturnsToRecommendations
+        val returnScreen = playbackReturnScreen
         val message = "Playback failed: ${error.errorCodeName} • ${error.message.orEmpty()}"
         stopPlayback()
-        if (returnToRecommendations) {
-            recommendationsStatus.text = message
-            restoreRecommendationFocus()
-        } else {
-            statusText.append("\n$message")
-            liveButton.requestFocus()
+        when (returnScreen) {
+            PlaybackReturnScreen.RECOMMENDATIONS -> {
+                recommendationsStatus.text = message
+                restoreRecommendationFocus()
+            }
+            PlaybackReturnScreen.HISTORY -> {
+                historyStatus.text = message
+                restoreHistoryFocus()
+            }
+            PlaybackReturnScreen.DIAGNOSTICS -> {
+                statusText.append("\n$message")
+                liveButton.requestFocus()
+            }
         }
     }
 
@@ -641,12 +850,12 @@ class MainActivity : Activity() {
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK && player != null) {
-            val returnToRecommendations = playbackReturnsToRecommendations
+            val returnScreen = playbackReturnScreen
             stopPlayback()
-            if (returnToRecommendations) {
-                restoreRecommendationFocus()
-            } else {
-                liveButton.requestFocus()
+            when (returnScreen) {
+                PlaybackReturnScreen.RECOMMENDATIONS -> restoreRecommendationFocus()
+                PlaybackReturnScreen.HISTORY -> restoreHistoryFocus()
+                PlaybackReturnScreen.DIAGNOSTICS -> liveButton.requestFocus()
             }
             return true
         }
@@ -658,23 +867,29 @@ class MainActivity : Activity() {
             hideRecommendations()
             return true
         }
+        if (keyCode == KeyEvent.KEYCODE_BACK && historyPanel.visibility == View.VISIBLE) {
+            hideHistory()
+            return true
+        }
         return super.onKeyDown(keyCode, event)
     }
 
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
     override fun onBackPressed() {
         if (player != null) {
-            val returnToRecommendations = playbackReturnsToRecommendations
+            val returnScreen = playbackReturnScreen
             stopPlayback()
-            if (returnToRecommendations) {
-                restoreRecommendationFocus()
-            } else {
-                liveButton.requestFocus()
+            when (returnScreen) {
+                PlaybackReturnScreen.RECOMMENDATIONS -> restoreRecommendationFocus()
+                PlaybackReturnScreen.HISTORY -> restoreHistoryFocus()
+                PlaybackReturnScreen.DIAGNOSTICS -> liveButton.requestFocus()
             }
         } else if (loginPanel.visibility == View.VISIBLE) {
             hideQrLogin()
         } else if (recommendationsPanel.visibility == View.VISIBLE) {
             hideRecommendations()
+        } else if (historyPanel.visibility == View.VISIBLE) {
+            hideHistory()
         } else {
             super.onBackPressed()
         }
@@ -684,6 +899,7 @@ class MainActivity : Activity() {
         cancelQrLogin()
         accountCall?.cancel()
         recommendationsCall?.cancel()
+        historyCall?.cancel()
         videoCall?.cancel()
         coverCalls.forEach(Call::cancel)
         coverCalls.clear()
@@ -700,6 +916,12 @@ class MainActivity : Activity() {
     }
 
     private data class StreamCandidate(val rank: Int, val url: String)
+
+    private enum class PlaybackReturnScreen {
+        DIAGNOSTICS,
+        RECOMMENDATIONS,
+        HISTORY
+    }
 
     private companion object {
         const val USER_AGENT =

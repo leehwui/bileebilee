@@ -2,7 +2,7 @@
 
 A lightweight, remote-first Bilibili client for Android TV, initially targeting the Xiaomi Mi Box 3 Enhanced Edition running Android 5.1 (API 22).
 
-## Current milestone (0.3.1)
+## Current milestone (0.4.0)
 
 The current build provides:
 
@@ -15,9 +15,11 @@ The current build provides:
 - Persistent mobile feed identity, app-style request context, and cursor-based refreshes
 - A four-column TV video grid with covers, metadata, and remote focus states
 - Progressive video playback for recommended videos
+- Account-synced, cursor-paginated watch history
+- Stored progress display and resume playback for history videos
 - Back-button return from playback to the originating screen and card
 
-These features have been tested on a Xiaomi Mi Box 3 Enhanced Edition running Android 5.1. Watch history is the next planned feature.
+These features have been tested on a Xiaomi Mi Box 3 Enhanced Edition running Android 5.1. History is currently read-only; playback heartbeat reporting is not implemented yet.
 
 ## Requirements
 
