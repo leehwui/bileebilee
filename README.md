@@ -2,17 +2,21 @@
 
 A lightweight, remote-first Bilibili client for Android TV, initially targeting the Xiaomi Mi Box 3 Enhanced Edition running Android 5.1 (API 22).
 
-## Current milestone
+## Current milestone (0.3.0)
 
-The first diagnostic build provides:
+The current build provides:
 
 - Android, display, ABI, and AVC/HEVC decoder diagnostics
 - D-pad focus navigation
+- Bilibili QR-code login with private on-device session storage
 - Public Bilibili live-room discovery
 - AVC live playback with HLS preferred and FLV fallback
-- Back-button return from playback to diagnostics
+- Personalized recommendations from Bilibili's mobile feed
+- A four-column TV video grid with covers, metadata, and remote focus states
+- Progressive video playback for recommended videos
+- Back-button return from playback to the originating screen and card
 
-Authentication, recommendations, ordinary video playback, and watch history will be added after validating this build on the physical box.
+These features have been tested on a Xiaomi Mi Box 3 Enhanced Edition running Android 5.1. Watch history is the next planned feature.
 
 ## Requirements
 
@@ -42,4 +46,4 @@ The emulator is ARM64 Android TV API 34 at 1920x1080 with 2 GB RAM.
 
 ## Security boundary
 
-Do not commit Bilibili passwords, cookies, access tokens, refresh tokens, QR authorization codes, or HAR files. Authentication will use QR login and store session material only in application-private device storage.
+Do not commit Bilibili passwords, cookies, access tokens, refresh tokens, QR authorization codes, or HAR files. QR login stores session material only in application-private device storage.

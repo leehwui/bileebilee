@@ -2,6 +2,7 @@ package com.bileebilee.tv
 
 import android.app.Activity
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.media.MediaCodecInfo
 import android.media.MediaCodecList
@@ -9,9 +10,12 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.LruCache
 import android.view.KeyEvent
+import android.view.LayoutInflater
 import android.view.View
 import android.widget.Button
+import android.widget.GridLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -40,7 +44,7 @@ class MainActivity : Activity() {
     private lateinit var diagnosticsPanel: LinearLayout
     private lateinit var statusText: TextView
     private lateinit var focusStatus: TextView
-    private lateinit var refreshButton: Button
+    private lateinit var recommendationsButton: Button
     private lateinit var liveButton: Button
     private lateinit var loginButton: Button
     private lateinit var loginPanel: LinearLayout
@@ -49,6 +53,10 @@ class MainActivity : Activity() {
     private lateinit var newQrButton: Button
     private lateinit var playerView: PlayerView
     private lateinit var playerHint: TextView
+    private lateinit var recommendationsPanel: LinearLayout
+    private lateinit var recommendationsStatus: TextView
+    private lateinit var recommendationsGrid: GridLayout
+    private lateinit var refreshRecommendationsButton: Button
     private lateinit var authClient: BilibiliAuthClient
 
     private val httpClient = OkHttpClient.Builder()
@@ -62,6 +70,14 @@ class MainActivity : Activity() {
     private var qrKey: String? = null
     private var qrCall: Call? = null
     private var accountCall: Call? = null
+    private var recommendationsCall: Call? = null
+    private var videoCall: Call? = null
+    private var playbackReturnsToRecommendations = false
+    private var recommendationReturnFocus: View? = null
+    private val coverCalls = mutableListOf<Call>()
+    private val coverCache = object : LruCache<String, Bitmap>(12 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
+    }
     private val mainHandler = Handler(Looper.getMainLooper())
     private val qrPollRunnable = Runnable { qrKey?.let(::pollQr) }
 
@@ -72,14 +88,18 @@ class MainActivity : Activity() {
         diagnosticsPanel = findViewById(R.id.diagnostics_panel)
         statusText = findViewById(R.id.status_text)
         focusStatus = findViewById(R.id.focus_status)
-        refreshButton = findViewById(R.id.refresh_button)
+        recommendationsButton = findViewById(R.id.recommendations_button)
         liveButton = findViewById(R.id.live_button)
         loginButton = findViewById(R.id.login_button)
         loginPanel = findViewById(R.id.login_panel)
         qrImage = findViewById(R.id.qr_image)
         loginStatus = findViewById(R.id.login_status)
         newQrButton = findViewById(R.id.new_qr_button)
-        refreshButton.isAllCaps = false
+        recommendationsPanel = findViewById(R.id.recommendations_panel)
+        recommendationsStatus = findViewById(R.id.recommendations_status)
+        recommendationsGrid = findViewById(R.id.recommendations_grid)
+        refreshRecommendationsButton = findViewById(R.id.refresh_recommendations_button)
+        recommendationsButton.isAllCaps = false
         liveButton.isAllCaps = false
         loginButton.isAllCaps = false
         newQrButton.isAllCaps = false
@@ -87,18 +107,20 @@ class MainActivity : Activity() {
         playerHint = findViewById(R.id.player_hint)
         authClient = BilibiliAuthClient(this, httpClient)
 
-        refreshButton.setOnClickListener { refreshDiagnostics() }
+        recommendationsButton.setOnClickListener { showRecommendations() }
         liveButton.setOnClickListener { startLiveStreamTest() }
         loginButton.setOnClickListener { startQrLogin() }
         newQrButton.setOnClickListener { startQrLogin() }
-        installFocusFeedback(refreshButton, getString(R.string.refresh_diagnostics))
+        refreshRecommendationsButton.setOnClickListener { loadRecommendations() }
+        refreshRecommendationsButton.isAllCaps = false
+        installFocusFeedback(recommendationsButton, getString(R.string.recommendations))
         installFocusFeedback(liveButton, getString(R.string.test_live_stream))
         installFocusFeedback(loginButton, getString(R.string.qr_login))
         installFocusFeedback(newQrButton, getString(R.string.new_qr_code))
 
         refreshDiagnostics()
         checkAccount()
-        refreshButton.requestFocus()
+        recommendationsButton.requestFocus()
     }
 
     private fun installFocusFeedback(button: Button, label: String) {
@@ -115,7 +137,7 @@ class MainActivity : Activity() {
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN && ::focusStatus.isInitialized) {
             val focusedLabel = when (currentFocus?.id) {
-                R.id.refresh_button -> getString(R.string.refresh_diagnostics)
+                R.id.recommendations_button -> getString(R.string.recommendations)
                 R.id.live_button -> getString(R.string.test_live_stream)
                 R.id.login_button -> getString(R.string.qr_login)
                 R.id.new_qr_button -> getString(R.string.new_qr_code)
@@ -140,6 +162,156 @@ class MainActivity : Activity() {
             appendLine()
             appendLine("D-pad input: ready")
             appendLine("Network: press “Test public live stream”")
+        }
+    }
+
+    private fun showRecommendations() {
+        diagnosticsPanel.visibility = View.GONE
+        loginPanel.visibility = View.GONE
+        recommendationsPanel.visibility = View.VISIBLE
+        refreshRecommendationsButton.requestFocus()
+        loadRecommendations()
+    }
+
+    private fun hideRecommendations() {
+        recommendationsCall?.cancel()
+        videoCall?.cancel()
+        recommendationsPanel.visibility = View.GONE
+        diagnosticsPanel.visibility = View.VISIBLE
+        recommendationsButton.requestFocus()
+    }
+
+    private fun loadRecommendations() {
+        recommendationsCall?.cancel()
+        recommendationsStatus.text = "Loading the mobile recommendation feed…"
+        refreshRecommendationsButton.isEnabled = false
+        recommendationsCall = authClient.fetchRecommendations { result ->
+            runOnUiThread {
+                refreshRecommendationsButton.isEnabled = true
+                result.fold(
+                    onSuccess = { videos ->
+                        renderRecommendations(videos)
+                        recommendationsStatus.text = if (videos.isEmpty()) {
+                            "No playable videos were returned."
+                        } else {
+                            "${videos.size} videos • Press OK to play • Back for device tools"
+                        }
+                        if (videos.isNotEmpty()) {
+                            recommendationsGrid.post { recommendationsGrid.getChildAt(0)?.requestFocus() }
+                        }
+                    },
+                    onFailure = { error ->
+                        recommendationsStatus.text =
+                            "Recommendation request failed: ${error.message.orEmpty()}"
+                        refreshRecommendationsButton.requestFocus()
+                    }
+                )
+            }
+        }
+    }
+
+    private fun renderRecommendations(videos: List<BilibiliAuthClient.Recommendation>) {
+        coverCalls.forEach(Call::cancel)
+        coverCalls.clear()
+        recommendationsGrid.removeAllViews()
+        recommendationReturnFocus = null
+        val horizontalPadding = dp(96)
+        val cardWidth = (resources.displayMetrics.widthPixels - horizontalPadding) / 4
+        videos.forEach { video ->
+            val card = LayoutInflater.from(this)
+                .inflate(R.layout.recommendation_card, recommendationsGrid, false)
+            val cover = card.findViewById<ImageView>(R.id.recommendation_cover)
+            card.findViewById<TextView>(R.id.recommendation_title).text = video.title
+            card.findViewById<TextView>(R.id.recommendation_duration).text = video.duration
+            card.findViewById<TextView>(R.id.recommendation_meta).text =
+                listOf(video.uploader, video.viewCount)
+                    .filter(String::isNotBlank)
+                    .joinToString("  •  ")
+            card.contentDescription = listOf(video.title, video.uploader, video.duration)
+                .filter(String::isNotBlank)
+                .joinToString(", ")
+            card.setOnClickListener {
+                recommendationReturnFocus = card
+                playRecommendation(video)
+            }
+            card.setOnFocusChangeListener { view, hasFocus ->
+                view.animate()
+                    .scaleX(if (hasFocus) 1.055f else 1f)
+                    .scaleY(if (hasFocus) 1.055f else 1f)
+                    .setDuration(120L)
+                    .start()
+                view.elevation = if (hasFocus) 18f else 0f
+            }
+            recommendationsGrid.addView(
+                card,
+                GridLayout.LayoutParams().apply {
+                    width = cardWidth
+                    height = GridLayout.LayoutParams.WRAP_CONTENT
+                }
+            )
+            loadCover(video.coverUrl, cover)
+        }
+    }
+
+    private fun loadCover(url: String, imageView: ImageView) {
+        imageView.tag = url
+        coverCache.get(url)?.let {
+            imageView.setImageBitmap(it)
+            return
+        }
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", USER_AGENT)
+            .header("Referer", "https://www.bilibili.com/")
+            .build()
+        val call = httpClient.newCall(request)
+        coverCalls += call
+        call.enqueue(object : Callback {
+            override fun onFailure(call: Call, error: IOException) = Unit
+
+            override fun onResponse(call: Call, response: Response) {
+                response.use {
+                    if (!it.isSuccessful) return
+                    val bytes = it.body?.bytes() ?: return
+                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return
+                    coverCache.put(url, bitmap)
+                    runOnUiThread {
+                        if (imageView.tag == url) imageView.setImageBitmap(bitmap)
+                    }
+                }
+            }
+        })
+    }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun restoreRecommendationFocus() {
+        val target = recommendationReturnFocus
+            ?.takeIf { it.parent === recommendationsGrid }
+            ?: recommendationsGrid.getChildAt(0)
+        target?.requestFocus()
+    }
+
+    private fun playRecommendation(video: BilibiliAuthClient.Recommendation) {
+        videoCall?.cancel()
+        recommendationsStatus.text = "Opening ${video.title}…"
+        videoCall = authClient.fetchVideoUrl(video) { result ->
+            runOnUiThread {
+                result.fold(
+                    onSuccess = { url ->
+                        playerHint.text = getString(R.string.video_player_hint)
+                        playMedia(
+                            url = url,
+                            referer = "https://www.bilibili.com/video/av${video.aid}",
+                            returnToRecommendations = true
+                        )
+                    },
+                    onFailure = { error ->
+                        recommendationsStatus.text =
+                            "Could not play video: ${error.message.orEmpty()}"
+                    }
+                )
+            }
         }
     }
 
@@ -328,7 +500,16 @@ class MainActivity : Activity() {
                         ?: return failLiveTest("Playback data was missing")
                     val streamUrl = selectStreamUrl(playurl.optJSONArray("stream"))
                         ?: return failLiveTest("No AVC playback URL was returned")
-                    runOnUiThread { play(roomId, streamUrl) }
+                    runOnUiThread {
+                        playerHint.text = getString(R.string.player_hint)
+                        isFetchingStream = false
+                        liveButton.isEnabled = true
+                        playMedia(
+                            url = streamUrl,
+                            referer = "https://live.bilibili.com/$roomId",
+                            returnToRecommendations = false
+                        )
+                    }
                 }
             }
         })
@@ -367,31 +548,35 @@ class MainActivity : Activity() {
     }
 
     @androidx.annotation.OptIn(markerClass = [UnstableApi::class])
-    private fun play(roomId: Long, url: String) {
-        isFetchingStream = false
-        liveButton.isEnabled = true
-
+    private fun playMedia(
+        url: String,
+        referer: String,
+        returnToRecommendations: Boolean
+    ) {
         val requestHeaders = mapOf(
-            "Referer" to "https://live.bilibili.com/$roomId",
-            "Origin" to "https://live.bilibili.com"
+            "Referer" to referer,
+            "Origin" to "https://www.bilibili.com"
         )
         val dataSourceFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(USER_AGENT)
             .setDefaultRequestProperties(requestHeaders)
             .setAllowCrossProtocolRedirects(true)
 
-        stopPlayback()
+        releasePlayer()
+        playbackReturnsToRecommendations = returnToRecommendations
         player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
             .build()
             .also { exoPlayer ->
                 exoPlayer.addListener(object : Player.Listener {
                     override fun onPlayerError(error: PlaybackException) {
-                        showDiagnostics("Playback failed: ${error.errorCodeName}\n${error.message.orEmpty()}")
+                        showPlaybackError(error)
                     }
                 })
                 playerView.player = exoPlayer
                 diagnosticsPanel.visibility = View.GONE
+                recommendationsPanel.visibility = View.GONE
+                loginPanel.visibility = View.GONE
                 playerView.visibility = View.VISIBLE
                 playerHint.visibility = View.VISIBLE
                 exoPlayer.setMediaItem(MediaItem.fromUri(url))
@@ -400,19 +585,40 @@ class MainActivity : Activity() {
             }
     }
 
-    private fun stopPlayback() {
+    private fun releasePlayer() {
         playerView.player = null
         player?.release()
         player = null
         playerView.visibility = View.GONE
         playerHint.visibility = View.GONE
-        diagnosticsPanel.visibility = View.VISIBLE
     }
 
-    private fun showDiagnostics(message: String) {
+    private fun stopPlayback() {
+        val returnToRecommendations = playbackReturnsToRecommendations
+        releasePlayer()
+        playbackReturnsToRecommendations = false
+        if (returnToRecommendations) {
+            diagnosticsPanel.visibility = View.GONE
+            recommendationsPanel.visibility = View.VISIBLE
+            recommendationsStatus.text =
+                "${recommendationsGrid.childCount} videos • Press OK to play • Back for device tools"
+        } else {
+            recommendationsPanel.visibility = View.GONE
+            diagnosticsPanel.visibility = View.VISIBLE
+        }
+    }
+
+    private fun showPlaybackError(error: PlaybackException) {
+        val returnToRecommendations = playbackReturnsToRecommendations
+        val message = "Playback failed: ${error.errorCodeName} • ${error.message.orEmpty()}"
         stopPlayback()
-        statusText.append("\n$message")
-        liveButton.requestFocus()
+        if (returnToRecommendations) {
+            recommendationsStatus.text = message
+            restoreRecommendationFocus()
+        } else {
+            statusText.append("\n$message")
+            liveButton.requestFocus()
+        }
     }
 
     private fun failLiveTest(message: String, error: Throwable? = null) {
@@ -425,13 +631,22 @@ class MainActivity : Activity() {
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_BACK && player != null) {
+            val returnToRecommendations = playbackReturnsToRecommendations
+            stopPlayback()
+            if (returnToRecommendations) {
+                restoreRecommendationFocus()
+            } else {
+                liveButton.requestFocus()
+            }
+            return true
+        }
         if (keyCode == KeyEvent.KEYCODE_BACK && loginPanel.visibility == View.VISIBLE) {
             hideQrLogin()
             return true
         }
-        if (keyCode == KeyEvent.KEYCODE_BACK && player != null) {
-            stopPlayback()
-            liveButton.requestFocus()
+        if (keyCode == KeyEvent.KEYCODE_BACK && recommendationsPanel.visibility == View.VISIBLE) {
+            hideRecommendations()
             return true
         }
         return super.onKeyDown(keyCode, event)
@@ -439,11 +654,18 @@ class MainActivity : Activity() {
 
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
     override fun onBackPressed() {
-        if (loginPanel.visibility == View.VISIBLE) {
-            hideQrLogin()
-        } else if (player != null) {
+        if (player != null) {
+            val returnToRecommendations = playbackReturnsToRecommendations
             stopPlayback()
-            liveButton.requestFocus()
+            if (returnToRecommendations) {
+                restoreRecommendationFocus()
+            } else {
+                liveButton.requestFocus()
+            }
+        } else if (loginPanel.visibility == View.VISIBLE) {
+            hideQrLogin()
+        } else if (recommendationsPanel.visibility == View.VISIBLE) {
+            hideRecommendations()
         } else {
             super.onBackPressed()
         }
@@ -452,7 +674,11 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         cancelQrLogin()
         accountCall?.cancel()
-        stopPlayback()
+        recommendationsCall?.cancel()
+        videoCall?.cancel()
+        coverCalls.forEach(Call::cancel)
+        coverCalls.clear()
+        releasePlayer()
         super.onDestroy()
     }
 

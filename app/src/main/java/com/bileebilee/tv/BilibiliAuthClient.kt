@@ -94,6 +94,71 @@ class BilibiliAuthClient(
         }
     }
 
+    fun fetchRecommendations(callback: (Result<List<Recommendation>>) -> Unit): Call {
+        val request = authenticatedRequest(
+            "https://app.bilibili.com/x/v2/feed/index" +
+                "?build=8290300&mobi_app=android&platform=android&device=phone" +
+                "&pull=true&idx=0&column=4"
+        ).build()
+        return enqueueJson(request, callback) { root ->
+            requireApiSuccess(root)
+            val items = root.getJSONObject("data").getJSONArray("items")
+            buildList {
+                for (index in 0 until items.length()) {
+                    val item = items.optJSONObject(index) ?: continue
+                    if (item.optString("goto") != "av" || item.optInt("can_play", 1) == 0) continue
+                    val playerArgs = item.optJSONObject("player_args") ?: continue
+                    val aid = playerArgs.optLong("aid")
+                    val cid = playerArgs.optLong("cid")
+                    if (aid <= 0L || cid <= 0L) continue
+                    add(
+                        Recommendation(
+                            aid = aid,
+                            cid = cid,
+                            title = item.optString("title", "Untitled video"),
+                            coverUrl = item.optString("cover").replace("http://", "https://"),
+                            uploader = item.optJSONObject("desc_button")?.optString("text").orEmpty(),
+                            viewCount = item.optString("cover_left_text_1"),
+                            duration = item.optString("cover_right_text")
+                        )
+                    )
+                }
+            }.take(20)
+        }
+    }
+
+    fun fetchVideoUrl(
+        video: Recommendation,
+        callback: (Result<String>) -> Unit
+    ): Call {
+        val request = authenticatedRequest(
+            "https://api.bilibili.com/x/player/playurl" +
+                "?avid=${video.aid}&cid=${video.cid}&qn=64&fnval=0" +
+                "&platform=html5&high_quality=1"
+        )
+            .header("Referer", "https://www.bilibili.com/video/av${video.aid}")
+            .build()
+        return enqueueJson(request, callback) { root ->
+            requireApiSuccess(root)
+            val data = root.getJSONObject("data")
+            val durl = data.optJSONArray("durl")
+                ?: error("Progressive playback is unavailable for this video")
+            durl.optJSONObject(0)?.optString("url")
+                ?.takeIf(String::isNotBlank)
+                ?: error("Playback URL was missing")
+        }
+    }
+
+    private fun authenticatedRequest(url: String): Request.Builder {
+        return Request.Builder()
+            .url(url)
+            .header("User-Agent", USER_AGENT)
+            .header("Referer", "https://www.bilibili.com/")
+            .apply {
+                cookieHeader().takeIf(String::isNotBlank)?.let { header("Cookie", it) }
+            }
+    }
+
     private fun saveSession(response: Response, redirectUrl: String) {
         val cookies = linkedMapOf<String, String>()
         response.headers.values("Set-Cookie").forEach { header ->
@@ -160,6 +225,15 @@ class BilibiliAuthClient(
     data class QrChallenge(val url: String, val key: String)
     data class QrPollResult(val state: QrState, val message: String)
     data class Account(val mid: Long, val name: String)
+    data class Recommendation(
+        val aid: Long,
+        val cid: Long,
+        val title: String,
+        val coverUrl: String,
+        val uploader: String,
+        val viewCount: String,
+        val duration: String
+    )
 
     enum class QrState {
         WAITING_FOR_SCAN,

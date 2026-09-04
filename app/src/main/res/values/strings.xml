@@ -3,10 +3,13 @@
     <string name="app_name">Bileebilee</string>
     <string name="diagnostics_title">Bileebilee device check</string>
     <string name="test_live_stream">Test public live stream</string>
-    <string name="refresh_diagnostics">Refresh diagnostics</string>
+    <string name="recommendations">Recommendations</string>
+    <string name="recommendations_title">Recommended for you</string>
+    <string name="refresh_recommendations">Refresh recommendations</string>
     <string name="qr_login">Sign in with QR code</string>
     <string name="new_qr_code">Generate a new QR code</string>
     <string name="qr_login_title">Sign in to Bilibili</string>
     <string name="qr_login_instructions">Scan with the Bilibili mobile app, then confirm on your phone.</string>
     <string name="player_hint">Press Back to stop playback and return to diagnostics.</string>
+    <string name="video_player_hint">Press Back to return to recommendations.</string>
 </resources>
