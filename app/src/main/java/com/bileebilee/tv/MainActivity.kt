@@ -8,11 +8,15 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.text.Html
 import android.util.LruCache
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.Button
+import android.widget.EditText
 import android.widget.GridLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -46,6 +50,7 @@ class MainActivity : Activity() {
     private lateinit var historyButton: Button
     private lateinit var liveButton: Button
     private lateinit var loginButton: Button
+    private lateinit var searchNavButton: Button
     private lateinit var loginPanel: LinearLayout
     private lateinit var loginDetails: LinearLayout
     private lateinit var loginTitle: TextView
@@ -77,6 +82,12 @@ class MainActivity : Activity() {
     private lateinit var followingScroll: ScrollView
     private lateinit var followingGrid: GridLayout
     private lateinit var followingBackButton: Button
+    private lateinit var searchPanel: LinearLayout
+    private lateinit var searchStatus: TextView
+    private lateinit var searchInput: EditText
+    private lateinit var searchActionButton: Button
+    private lateinit var searchScroll: ScrollView
+    private lateinit var searchGrid: GridLayout
     private lateinit var authClient: BilibiliAuthClient
 
     private val httpClient = OkHttpClient.Builder()
@@ -95,6 +106,7 @@ class MainActivity : Activity() {
     private var videoCall: Call? = null
     private var followingCall: Call? = null
     private var creatorVideosCall: Call? = null
+    private var searchCall: Call? = null
     private var playbackReturnScreen = PlaybackReturnScreen.RECOMMENDATIONS
     private var currentBrowseScreen = BrowseScreen.RECOMMENDATIONS
     private var currentAccount: BilibiliAuthClient.Account? = null
@@ -131,6 +143,12 @@ class MainActivity : Activity() {
     private var liveSource = BilibiliAuthClient.LiveSource.FOLLOWING
     private var liveHasMore = false
     private var liveLoading = false
+    private var searchQuery = ""
+    private var searchPage = 0
+    private var searchTotal = 0
+    private var searchHasMore = false
+    private var searchLoading = false
+    private var searchReturnFocus: View? = null
     private var playbackHeartbeatCall: Call? = null
     private var activePlaybackTracking: BilibiliAuthClient.PlaybackTracking? = null
     private var playbackStartedAt = 0L
@@ -160,6 +178,7 @@ class MainActivity : Activity() {
         historyButton = findViewById(R.id.history_button)
         liveButton = findViewById(R.id.live_button)
         loginButton = findViewById(R.id.login_button)
+        searchNavButton = findViewById(R.id.search_button)
         loginPanel = findViewById(R.id.login_panel)
         loginDetails = findViewById(R.id.login_details)
         loginTitle = findViewById(R.id.login_title)
@@ -189,10 +208,17 @@ class MainActivity : Activity() {
         followingScroll = findViewById(R.id.following_scroll)
         followingGrid = findViewById(R.id.following_grid)
         followingBackButton = findViewById(R.id.following_back_button)
+        searchPanel = findViewById(R.id.search_panel)
+        searchStatus = findViewById(R.id.search_status)
+        searchInput = findViewById(R.id.search_input)
+        searchActionButton = findViewById(R.id.search_action_button)
+        searchScroll = findViewById(R.id.search_scroll)
+        searchGrid = findViewById(R.id.search_grid)
         recommendationsButton.isAllCaps = false
         historyButton.isAllCaps = false
         liveButton.isAllCaps = false
         loginButton.isAllCaps = false
+        searchNavButton.isAllCaps = false
         newQrButton.isAllCaps = false
         playerView = findViewById(R.id.player_view)
         playerHint = findViewById(R.id.player_hint)
@@ -202,6 +228,7 @@ class MainActivity : Activity() {
         historyButton.setOnClickListener { showHistory(focusContent = false) }
         liveButton.setOnClickListener { showLiveRooms(focusContent = false) }
         loginButton.setOnClickListener { showAccount() }
+        searchNavButton.setOnClickListener { showSearch(focusInput = false) }
         followingAccountsButton.setOnClickListener { showFollowingCreators(reset = true) }
         newQrButton.setOnClickListener { startQrLogin() }
         refreshRecommendationsButton.setOnClickListener { refreshRecommendations() }
@@ -212,18 +239,33 @@ class MainActivity : Activity() {
             selectLiveSource(BilibiliAuthClient.LiveSource.POPULAR)
         }
         followingBackButton.setOnClickListener { showFollowingCreators(reset = false) }
+        searchActionButton.setOnClickListener { submitSearch() }
+        searchInput.setOnEditorActionListener { _, actionId, event ->
+            val enterEvent = event?.keyCode == KeyEvent.KEYCODE_ENTER
+            if (actionId == EditorInfo.IME_ACTION_SEARCH || enterEvent) {
+                if (actionId == EditorInfo.IME_ACTION_SEARCH || event?.action == KeyEvent.ACTION_DOWN) {
+                    submitSearch()
+                }
+                true
+            } else {
+                false
+            }
+        }
         refreshRecommendationsButton.isAllCaps = false
         followingLiveButton.isAllCaps = false
         popularLiveButton.isAllCaps = false
         followingAccountsButton.isAllCaps = false
         followingBackButton.isAllCaps = false
+        searchActionButton.isAllCaps = false
         installNavigationTab(recommendationsButton, BrowseScreen.RECOMMENDATIONS)
         installNavigationTab(historyButton, BrowseScreen.HISTORY)
         installNavigationTab(liveButton, BrowseScreen.LIVE)
         installNavigationTab(loginButton, BrowseScreen.ACCOUNT)
+        installNavigationTab(searchNavButton, BrowseScreen.SEARCH)
         installFocusFeedback(newQrButton)
         installFocusFeedback(followingAccountsButton)
         installFocusFeedback(followingBackButton)
+        installFocusFeedback(searchActionButton)
 
         checkAccount()
         showRecommendations(focusContent = false)
@@ -261,6 +303,7 @@ class MainActivity : Activity() {
             BrowseScreen.HISTORY -> showHistory(focusContent = false)
             BrowseScreen.LIVE -> showLiveRooms(focusContent = false)
             BrowseScreen.ACCOUNT -> showAccount()
+            BrowseScreen.SEARCH -> showSearch(focusInput = false)
         }
     }
 
@@ -270,6 +313,10 @@ class MainActivity : Activity() {
             followingCall?.cancel()
             creatorVideosCall?.cancel()
         }
+        if (currentBrowseScreen == BrowseScreen.SEARCH) {
+            searchCall?.cancel()
+            searchLoading = false
+        }
     }
 
     private fun showRecommendations(focusContent: Boolean = true) {
@@ -278,6 +325,7 @@ class MainActivity : Activity() {
         historyPanel.visibility = View.GONE
         livePanel.visibility = View.GONE
         followingPanel.visibility = View.GONE
+        searchPanel.visibility = View.GONE
         recommendationsPanel.visibility = View.VISIBLE
         currentBrowseScreen = BrowseScreen.RECOMMENDATIONS
         updateNavigation(recommendationsButton)
@@ -307,6 +355,7 @@ class MainActivity : Activity() {
         loginPanel.visibility = View.GONE
         livePanel.visibility = View.GONE
         followingPanel.visibility = View.GONE
+        searchPanel.visibility = View.GONE
         historyPanel.visibility = View.VISIBLE
         currentBrowseScreen = BrowseScreen.HISTORY
         updateNavigation(historyButton)
@@ -335,6 +384,7 @@ class MainActivity : Activity() {
         historyPanel.visibility = View.GONE
         loginPanel.visibility = View.GONE
         followingPanel.visibility = View.GONE
+        searchPanel.visibility = View.GONE
         livePanel.visibility = View.VISIBLE
         currentBrowseScreen = BrowseScreen.LIVE
         updateNavigation(liveButton)
@@ -358,11 +408,12 @@ class MainActivity : Activity() {
         historyButton.isActivated = activeButton === historyButton
         liveButton.isActivated = activeButton === liveButton
         loginButton.isActivated = activeButton === loginButton
+        searchNavButton.isActivated = activeButton === searchNavButton
     }
 
     private fun navigationHasFocus(): Boolean =
         recommendationsButton.hasFocus() || historyButton.hasFocus() ||
-            liveButton.hasFocus() || loginButton.hasFocus()
+            liveButton.hasFocus() || loginButton.hasFocus() || searchNavButton.hasFocus()
 
     private fun selectLiveSource(source: BilibiliAuthClient.LiveSource) {
         liveRoomsCall?.cancel()
@@ -867,13 +918,14 @@ class MainActivity : Activity() {
 
     private fun loadCover(url: String, imageView: ImageView) {
         if (url.isBlank()) return
-        imageView.tag = url
-        coverCache.get(url)?.let {
+        val resolvedUrl = if (url.startsWith("//")) "https:$url" else url
+        imageView.tag = resolvedUrl
+        coverCache.get(resolvedUrl)?.let {
             imageView.setImageBitmap(it)
             return
         }
         val request = Request.Builder()
-            .url(coverThumbnailUrl(url))
+            .url(coverThumbnailUrl(resolvedUrl))
             .header("User-Agent", USER_AGENT)
             .header("Referer", "https://www.bilibili.com/")
             .build()
@@ -887,9 +939,9 @@ class MainActivity : Activity() {
                     if (!it.isSuccessful) return
                     val bytes = it.body?.bytes() ?: return
                     val bitmap = decodeCover(bytes) ?: return
-                    coverCache.put(url, bitmap)
+                    coverCache.put(resolvedUrl, bitmap)
                     runOnUiThread {
-                        if (imageView.tag == url) imageView.setImageBitmap(bitmap)
+                        if (imageView.tag == resolvedUrl) imageView.setImageBitmap(bitmap)
                     }
                 }
             }
@@ -989,6 +1041,216 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun showSearch(focusInput: Boolean = true) {
+        if (currentBrowseScreen != BrowseScreen.SEARCH) leaveAccountIfNeeded()
+        recommendationsPanel.visibility = View.GONE
+        historyPanel.visibility = View.GONE
+        livePanel.visibility = View.GONE
+        loginPanel.visibility = View.GONE
+        followingPanel.visibility = View.GONE
+        searchPanel.visibility = View.VISIBLE
+        currentBrowseScreen = BrowseScreen.SEARCH
+        updateNavigation(searchNavButton)
+        searchStatus.text = if (searchQuery.isBlank()) {
+            getString(R.string.search_prompt)
+        } else {
+            searchSummary()
+        }
+        if (focusInput) searchInput.requestFocus()
+    }
+
+    private fun submitSearch() {
+        val query = searchInput.text.toString().trim()
+        if (query.isBlank()) {
+            searchStatus.text = "Enter something to search for."
+            searchInput.requestFocus()
+            return
+        }
+        (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager)
+            .hideSoftInputFromWindow(searchInput.windowToken, 0)
+        searchCall?.cancel()
+        searchQuery = query
+        searchPage = 0
+        searchTotal = 0
+        searchHasMore = true
+        searchLoading = false
+        searchReturnFocus = null
+        searchGrid.removeAllViews()
+        searchScroll.scrollTo(0, 0)
+        loadSearchResults()
+    }
+
+    private fun loadSearchResults() {
+        if (searchQuery.isBlank() || searchLoading || (searchPage > 0 && !searchHasMore)) return
+        searchLoading = true
+        val firstPage = searchPage == 0
+        val requestedPage = searchPage + 1
+        searchStatus.text = if (firstPage) {
+            "Searching for “$searchQuery”…"
+        } else {
+            "Loading more search results…"
+        }
+        searchActionButton.isEnabled = false
+        lateinit var requestCall: Call
+        try {
+            requestCall = authClient.fetchSearchVideos(searchQuery, requestedPage) { result ->
+                runOnUiThread {
+                    if (searchCall !== requestCall) return@runOnUiThread
+                    searchActionButton.isEnabled = true
+                    if (searchPanel.visibility != View.VISIBLE) {
+                        searchLoading = false
+                        return@runOnUiThread
+                    }
+                    result.fold(
+                        onSuccess = { page ->
+                            searchPage = page.page
+                            searchTotal = page.total
+                            searchHasMore = page.hasMore
+                            renderSearchResults(page.videos, append = !firstPage)
+                            searchLoading = false
+                            searchStatus.text = if (searchGrid.childCount == 0) {
+                                "No videos found for “$searchQuery”."
+                            } else {
+                                searchSummary()
+                            }
+                            if (firstPage && page.videos.isNotEmpty()) {
+                                searchGrid.post { searchGrid.getChildAt(0)?.requestFocus() }
+                            }
+                        },
+                        onFailure = { error ->
+                            searchLoading = false
+                            searchStatus.text = "Search failed: ${error.message.orEmpty()}"
+                            if (firstPage) searchInput.requestFocus()
+                        }
+                    )
+                }
+            }
+        } catch (error: IllegalStateException) {
+            searchLoading = false
+            searchActionButton.isEnabled = true
+            searchStatus.text = "Search is still starting up. Please try again."
+            searchInput.requestFocus()
+            return
+        }
+        searchCall = requestCall
+    }
+
+    private fun renderSearchResults(
+        videos: List<BilibiliAuthClient.SearchVideo>,
+        append: Boolean
+    ) {
+        if (!append) {
+            coverCalls.forEach(Call::cancel)
+            coverCalls.clear()
+            searchGrid.removeAllViews()
+            searchReturnFocus = null
+        }
+        val startIndex = searchGrid.childCount
+        val cardWidth = gridCardWidth()
+        videos.forEachIndexed { pageIndex, video ->
+            val index = startIndex + pageIndex
+            val card = LayoutInflater.from(this)
+                .inflate(R.layout.recommendation_card, searchGrid, false)
+            card.id = View.generateViewId()
+            if (index < GRID_COLUMN_COUNT) {
+                card.nextFocusUpId = if (index < GRID_COLUMN_COUNT - 1) {
+                    R.id.search_input
+                } else {
+                    R.id.search_action_button
+                }
+            }
+            if (index == 0) {
+                searchInput.nextFocusDownId = card.id
+                searchActionButton.nextFocusDownId = card.id
+            }
+            val title = cleanSearchText(video.title)
+            val duration = normalizeSearchDuration(video.duration)
+            val cover = card.findViewById<ImageView>(R.id.recommendation_cover)
+            card.findViewById<TextView>(R.id.recommendation_title).text = title
+            card.findViewById<TextView>(R.id.recommendation_duration).text = duration
+            card.findViewById<TextView>(R.id.recommendation_meta).text =
+                listOf(video.uploader, video.viewCount)
+                    .filter(String::isNotBlank)
+                    .joinToString("  •  ")
+            card.contentDescription = listOf(title, video.uploader, duration)
+                .filter(String::isNotBlank)
+                .joinToString(", ")
+            card.setOnClickListener {
+                searchReturnFocus = card
+                playSearchResult(video)
+            }
+            card.setOnFocusChangeListener { view, hasFocus ->
+                if (hasFocus) {
+                    searchReturnFocus = view
+                    snapGridToFocusedRow(searchScroll, searchGrid, index)
+                    if (shouldPrefetch(index, searchGrid.childCount) && searchHasMore) {
+                        loadSearchResults()
+                    }
+                }
+                view.animate()
+                    .scaleX(if (hasFocus) 1.055f else 1f)
+                    .scaleY(if (hasFocus) 1.055f else 1f)
+                    .setDuration(120L)
+                    .start()
+                view.elevation = if (hasFocus) 18f else 0f
+            }
+            searchGrid.addView(
+                card,
+                GridLayout.LayoutParams().apply {
+                    width = cardWidth
+                    height = GridLayout.LayoutParams.WRAP_CONTENT
+                    setMargins(
+                        dp(CARD_MARGIN_DP), dp(CARD_MARGIN_DP),
+                        dp(CARD_MARGIN_DP), dp(CARD_MARGIN_DP)
+                    )
+                }
+            )
+            loadCover(video.coverUrl, cover)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun cleanSearchText(value: String): String = Html.fromHtml(value).toString().trim()
+
+    private fun normalizeSearchDuration(value: String): String = value.split(':')
+        .mapIndexed { index, part -> if (index == 0) part else part.padStart(2, '0') }
+        .joinToString(":")
+
+    private fun searchSummary(): String =
+        "${searchGrid.childCount} videos loaded • Page $searchPage • $searchTotal results" +
+            if (searchHasMore) " • Scroll for more" else ""
+
+    private fun restoreSearchFocus() {
+        val target = searchReturnFocus
+            ?.takeIf { it.parent === searchGrid }
+            ?: searchGrid.getChildAt(0)
+            ?: searchInput
+        target.requestFocus()
+    }
+
+    private fun playSearchResult(video: BilibiliAuthClient.SearchVideo) {
+        videoCall?.cancel()
+        searchStatus.text = "Opening ${cleanSearchText(video.title)}…"
+        videoCall = authClient.fetchSearchVideoUrl(video) { result ->
+            runOnUiThread {
+                result.fold(
+                    onSuccess = { url ->
+                        playerHint.text = getString(R.string.search_player_hint)
+                        playMedia(
+                            url = url,
+                            referer = "https://www.bilibili.com/video/av${video.aid}",
+                            returnScreen = PlaybackReturnScreen.SEARCH
+                        )
+                    },
+                    onFailure = { error ->
+                        searchStatus.text = "Could not play search result: ${error.message.orEmpty()}"
+                        restoreSearchFocus()
+                    }
+                )
+            }
+        }
+    }
+
     private fun showFollowingCreators(reset: Boolean) {
         val account = currentAccount ?: run {
             showAccount()
@@ -999,6 +1261,7 @@ class MainActivity : Activity() {
         historyPanel.visibility = View.GONE
         livePanel.visibility = View.GONE
         loginPanel.visibility = View.GONE
+        searchPanel.visibility = View.GONE
         followingPanel.visibility = View.VISIBLE
         currentBrowseScreen = BrowseScreen.ACCOUNT
         updateNavigation(loginButton)
@@ -1367,12 +1630,17 @@ class MainActivity : Activity() {
     }
 
     private fun showAccount() {
+        if (currentBrowseScreen == BrowseScreen.SEARCH) {
+            searchCall?.cancel()
+            searchLoading = false
+        }
         followingCall?.cancel()
         creatorVideosCall?.cancel()
         recommendationsPanel.visibility = View.GONE
         historyPanel.visibility = View.GONE
         livePanel.visibility = View.GONE
         followingPanel.visibility = View.GONE
+        searchPanel.visibility = View.GONE
         loginPanel.visibility = View.VISIBLE
         currentBrowseScreen = BrowseScreen.ACCOUNT
         updateNavigation(loginButton)
@@ -1436,6 +1704,7 @@ class MainActivity : Activity() {
         historyPanel.visibility = View.GONE
         livePanel.visibility = View.GONE
         followingPanel.visibility = View.GONE
+        searchPanel.visibility = View.GONE
         currentBrowseScreen = BrowseScreen.ACCOUNT
         updateNavigation(loginButton)
         loginPanel.visibility = View.VISIBLE
@@ -1575,6 +1844,7 @@ class MainActivity : Activity() {
                 livePanel.visibility = View.GONE
                 loginPanel.visibility = View.GONE
                 followingPanel.visibility = View.GONE
+                searchPanel.visibility = View.GONE
                 playerView.visibility = View.VISIBLE
                 playerHint.visibility = View.VISIBLE
                 exoPlayer.setMediaItem(MediaItem.fromUri(url))
@@ -1637,6 +1907,7 @@ class MainActivity : Activity() {
         livePanel.visibility = View.GONE
         loginPanel.visibility = View.GONE
         followingPanel.visibility = View.GONE
+        searchPanel.visibility = View.GONE
         when (returnScreen) {
             PlaybackReturnScreen.RECOMMENDATIONS -> {
                 currentBrowseScreen = BrowseScreen.RECOMMENDATIONS
@@ -1662,6 +1933,12 @@ class MainActivity : Activity() {
                 followingPanel.visibility = View.VISIBLE
                 followingStatus.text = creatorVideosSummary()
             }
+            PlaybackReturnScreen.SEARCH -> {
+                currentBrowseScreen = BrowseScreen.SEARCH
+                updateNavigation(searchNavButton)
+                searchPanel.visibility = View.VISIBLE
+                searchStatus.text = searchSummary()
+            }
         }
     }
 
@@ -1686,6 +1963,10 @@ class MainActivity : Activity() {
                 followingStatus.text = message
                 restoreFollowingFocus(creatorVideoFocusIndex)
             }
+            PlaybackReturnScreen.SEARCH -> {
+                searchStatus.text = message
+                restoreSearchFocus()
+            }
         }
     }
 
@@ -1698,6 +1979,7 @@ class MainActivity : Activity() {
                 PlaybackReturnScreen.HISTORY -> restoreHistoryFocus()
                 PlaybackReturnScreen.LIVE -> restoreLiveFocus()
                 PlaybackReturnScreen.FOLLOWING -> restoreFollowingFocus(creatorVideoFocusIndex)
+                PlaybackReturnScreen.SEARCH -> restoreSearchFocus()
             }
             return true
         }
@@ -1722,6 +2004,12 @@ class MainActivity : Activity() {
             hideLiveRooms()
             return true
         }
+        if (keyCode == KeyEvent.KEYCODE_BACK && searchPanel.visibility == View.VISIBLE) {
+            searchCall?.cancel()
+            searchLoading = false
+            showRecommendations()
+            return true
+        }
         return super.onKeyDown(keyCode, event)
     }
 
@@ -1735,6 +2023,7 @@ class MainActivity : Activity() {
                 PlaybackReturnScreen.HISTORY -> restoreHistoryFocus()
                 PlaybackReturnScreen.LIVE -> restoreLiveFocus()
                 PlaybackReturnScreen.FOLLOWING -> restoreFollowingFocus(creatorVideoFocusIndex)
+                PlaybackReturnScreen.SEARCH -> restoreSearchFocus()
             }
         } else if (loginPanel.visibility == View.VISIBLE) {
             hideAccount()
@@ -1749,6 +2038,10 @@ class MainActivity : Activity() {
             hideHistory()
         } else if (livePanel.visibility == View.VISIBLE) {
             hideLiveRooms()
+        } else if (searchPanel.visibility == View.VISIBLE) {
+            searchCall?.cancel()
+            searchLoading = false
+            showRecommendations()
         } else {
             super.onBackPressed()
         }
@@ -1764,6 +2057,7 @@ class MainActivity : Activity() {
         liveStreamCall?.cancel()
         followingCall?.cancel()
         creatorVideosCall?.cancel()
+        searchCall?.cancel()
         videoCall?.cancel()
         coverCalls.forEach(Call::cancel)
         coverCalls.clear()
@@ -1776,7 +2070,8 @@ class MainActivity : Activity() {
         RECOMMENDATIONS,
         HISTORY,
         LIVE,
-        FOLLOWING
+        FOLLOWING,
+        SEARCH
     }
 
     private enum class FollowingMode {
@@ -1788,7 +2083,8 @@ class MainActivity : Activity() {
         RECOMMENDATIONS,
         HISTORY,
         LIVE,
-        ACCOUNT
+        ACCOUNT,
+        SEARCH
     }
 
     private companion object {

@@ -96,22 +96,18 @@ class BilibiliAuthClient(
 
     fun checkSession(callback: (Result<Account?>) -> Unit): Call? {
         val cookies = cookieHeader()
-        if (cookies.isBlank()) {
-            callback(Result.success(null))
-            return null
-        }
-        val request = Request.Builder()
+        val requestBuilder = Request.Builder()
             .url("https://api.bilibili.com/x/web-interface/nav")
             .header("User-Agent", USER_AGENT)
             .header("Referer", "https://www.bilibili.com/")
-            .header("Cookie", cookies)
-            .build()
+        if (cookies.isNotBlank()) requestBuilder.header("Cookie", cookies)
+        val request = requestBuilder.build()
         return enqueueJson(request, callback) { root ->
             requireApiSuccess(root)
             val data = root.getJSONObject("data")
             updateWbiMixinKey(data.optJSONObject("wbi_img"))
             if (!data.optBoolean("isLogin")) {
-                clearSession()
+                if (cookies.isNotBlank()) clearSession()
                 null
             } else {
                 Account(data.getLong("mid"), data.getString("uname"))
@@ -223,6 +219,79 @@ class BilibiliAuthClient(
         callback: (Result<String>) -> Unit
     ): Call {
         if (video.cid > 0L) return fetchArchiveVideoUrl(video.aid, video.cid, callback)
+        val request = authenticatedRequest("$VIDEO_PAGES_URL?aid=${video.aid}")
+            .header("Referer", "https://www.bilibili.com/video/av${video.aid}")
+            .build()
+        return enqueueJson(request, { cidResult ->
+            cidResult.fold(
+                onSuccess = { cid -> fetchArchiveVideoUrl(video.aid, cid, callback) },
+                onFailure = { callback(Result.failure(it)) }
+            )
+        }) { root ->
+            requireApiSuccess(root)
+            root.optJSONArray("data")?.optJSONObject(0)?.optLong("cid")
+                ?.takeIf { it > 0L }
+                ?: error("Video page data was missing")
+        }
+    }
+
+    fun fetchSearchVideos(
+        keyword: String,
+        page: Int,
+        callback: (Result<SearchVideoPage>) -> Unit
+    ): Call {
+        if (wbiMixinKey.isBlank()) error("Search signing data is unavailable")
+        val url = signedWbiUrl(
+            SEARCH_VIDEOS_URL,
+            mapOf(
+                "keyword" to keyword,
+                "search_type" to "video",
+                "order" to "totalrank",
+                "page" to page.toString(),
+                "page_size" to SEARCH_PAGE_SIZE.toString()
+            )
+        )
+        val request = authenticatedRequest(url)
+            .header("Referer", "https://search.bilibili.com/")
+            .build()
+        return enqueueJson(request, callback) { root ->
+            requireApiSuccess(root)
+            val data = root.getJSONObject("data")
+            val result = data.optJSONArray("result")
+            val videos = buildList {
+                if (result != null) {
+                    for (index in 0 until result.length()) {
+                        val item = result.optJSONObject(index) ?: continue
+                        val aid = item.optLong("aid")
+                        if (aid <= 0L) continue
+                        add(
+                            SearchVideo(
+                                aid = aid,
+                                title = item.optString("title", "Untitled video"),
+                                coverUrl = item.optString("pic").replace("http://", "https://"),
+                                uploader = item.optString("author"),
+                                viewCount = item.optString("play"),
+                                duration = item.optString("duration")
+                            )
+                        )
+                    }
+                }
+            }
+            val total = data.optInt("numResults", videos.size)
+            val pageCount = data.optInt("numPages", 1)
+            SearchVideoPage(
+                videos = videos,
+                page = page,
+                total = total,
+                hasMore = page < pageCount
+            )
+        }
+    }
+
+    fun fetchSearchVideoUrl(
+        video: SearchVideo,
+        callback: (Result<String>) -> Unit
+    ): Call {
         val request = authenticatedRequest("$VIDEO_PAGES_URL?aid=${video.aid}")
             .header("Referer", "https://www.bilibili.com/video/av${video.aid}")
             .build()
@@ -765,6 +834,20 @@ class BilibiliAuthClient(
         val total: Int,
         val hasMore: Boolean
     )
+    data class SearchVideo(
+        val aid: Long,
+        val title: String,
+        val coverUrl: String,
+        val uploader: String,
+        val viewCount: String,
+        val duration: String
+    )
+    data class SearchVideoPage(
+        val videos: List<SearchVideo>,
+        val page: Int,
+        val total: Int,
+        val hasMore: Boolean
+    )
     data class Recommendation(
         val aid: Long,
         val cid: Long,
@@ -848,6 +931,7 @@ class BilibiliAuthClient(
         private const val HISTORY_URL = "https://api.bilibili.com/x/web-interface/history/cursor"
         private const val FOLLOWING_URL = "https://api.bilibili.com/x/relation/followings"
         private const val CREATOR_VIDEOS_URL = "https://api.bilibili.com/x/space/wbi/arc/search"
+        private const val SEARCH_VIDEOS_URL = "https://api.bilibili.com/x/web-interface/wbi/search/type"
         private const val VIDEO_PAGES_URL = "https://api.bilibili.com/x/player/pagelist"
         private const val PGC_PLAY_URL = "https://api.bilibili.com/pgc/player/web/playurl"
         private const val HEARTBEAT_URL = "https://api.bilibili.com/x/click-interface/web/heartbeat"
@@ -859,6 +943,7 @@ class BilibiliAuthClient(
         private const val HISTORY_PAGE_SIZE = 20
         private const val FOLLOWING_PAGE_SIZE = 20
         private const val CREATOR_VIDEO_PAGE_SIZE = 20
+        private const val SEARCH_PAGE_SIZE = 20
         private const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 5.1; BileebileeTV/0.3) " +
                 "AppleWebKit/537.36 Mobile Safari/537.36"

@@ -338,6 +338,101 @@
     </LinearLayout>
 
     <LinearLayout
+        android:id="@+id/search_panel"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#101114"
+        android:orientation="vertical"
+        android:paddingTop="84dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="72dp"
+            android:paddingEnd="72dp">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/search_title"
+                    android:textColor="#FFFFFF"
+                    android:textSize="26sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/search_status"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:text="@string/search_prompt"
+                    android:textColor="#BFC0C5"
+                    android:textSize="14sp" />
+            </LinearLayout>
+
+            <EditText
+                android:id="@+id/search_input"
+                android:layout_width="420dp"
+                android:layout_height="52dp"
+                android:background="@drawable/tv_button_background"
+                android:focusable="true"
+                android:hint="@string/search_hint"
+                android:imeOptions="actionSearch"
+                android:inputType="text"
+                android:nextFocusLeft="@id/search_button"
+                android:nextFocusRight="@id/search_action_button"
+                android:nextFocusUp="@id/search_button"
+                android:paddingStart="20dp"
+                android:paddingEnd="20dp"
+                android:singleLine="true"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#9A9CA3"
+                android:textSize="17sp" />
+
+            <Button
+                android:id="@+id/search_action_button"
+                android:layout_width="130dp"
+                android:layout_height="52dp"
+                android:layout_marginStart="10dp"
+                android:background="@drawable/tv_button_background"
+                android:focusable="true"
+                android:nextFocusLeft="@id/search_input"
+                android:nextFocusUp="@id/search_button"
+                android:text="@string/search_action"
+                android:textColor="@color/tv_button_text" />
+        </LinearLayout>
+
+        <ScrollView
+            android:id="@+id/search_scroll"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginTop="12dp"
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            android:fillViewport="true"
+            android:paddingStart="72dp"
+            android:paddingEnd="72dp"
+            android:paddingBottom="24dp">
+
+            <GridLayout
+                android:id="@+id/search_grid"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:clipChildren="false"
+                android:columnCount="4"
+                android:orientation="horizontal" />
+        </ScrollView>
+    </LinearLayout>
+
+    <LinearLayout
         android:id="@+id/navigation_bar"
         android:layout_width="match_parent"
         android:layout_height="72dp"
@@ -415,7 +510,22 @@
             android:minWidth="0dp"
             android:nextFocusDown="@id/following_accounts_button"
             android:nextFocusLeft="@id/live_button"
+            android:nextFocusRight="@id/search_button"
             android:text="@string/account"
+            android:textColor="@color/tv_button_text"
+            android:textSize="16sp" />
+
+        <Button
+            android:id="@+id/search_button"
+            android:layout_width="104dp"
+            android:layout_height="52dp"
+            android:layout_marginStart="2dp"
+            android:background="@drawable/tab_button_background"
+            android:focusable="true"
+            android:minWidth="0dp"
+            android:nextFocusDown="@id/search_input"
+            android:nextFocusLeft="@id/login_button"
+            android:text="@string/search"
             android:textColor="@color/tv_button_text"
             android:textSize="16sp" />
     </LinearLayout>
