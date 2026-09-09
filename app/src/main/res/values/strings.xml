@@ -4,11 +4,9 @@
     <string name="for_you">For you</string>
     <string name="account">Account</string>
     <string name="live">Live</string>
-    <string name="search">Search</string>
     <string name="search_title">Search videos</string>
     <string name="search_prompt">Enter a title, creator, or topic.</string>
     <string name="search_hint">Search Bilibili</string>
-    <string name="search_action">Search</string>
     <string name="search_player_hint">Press Back to return to search results.</string>
     <string name="following_live_title">Following live</string>
     <string name="popular_live_title">Popular live rooms</string>
@@ -32,6 +30,9 @@
     <string name="back_to_following">All creators</string>
     <string name="following_player_hint">Press Back to return to creator videos.</string>
     <string name="player_hint">Press Back to stop playback and return home.</string>
+    <string name="player_settings_title">Playback settings</string>
+    <string name="player_speed">Speed</string>
+    <string name="player_audio">Audio</string>
     <string name="video_player_hint">Press Back to return to recommendations.</string>
     <string name="history_player_hint">Press Back to return to watch history.</string>
     <string name="live_player_hint">Press Back to return to live rooms.</string>

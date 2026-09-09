@@ -3,7 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-val appVersionName = "1.0.0"
+val appVersionName = "1.0.1"
 
 android {
     namespace = "com.bileebilee.tv"
@@ -13,7 +13,7 @@ android {
         applicationId = "com.bileebilee.tv"
         minSdk = 22
         targetSdk = 35
-        versionCode = 17
+        versionCode = 18
         versionName = appVersionName
     }
 

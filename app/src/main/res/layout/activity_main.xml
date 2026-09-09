@@ -185,6 +185,39 @@
         android:visibility="gone" />
 
     <LinearLayout
+        android:id="@+id/player_settings_panel"
+        android:layout_width="300dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="48dp"
+        android:layout_marginBottom="136dp"
+        android:background="@drawable/player_settings_background"
+        android:elevation="32dp"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/player_settings_title"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:text="@string/player_settings_title"
+            android:visibility="gone" />
+
+        <ScrollView
+            android:id="@+id/player_settings_scroll"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fillViewport="false">
+
+            <LinearLayout
+                android:id="@+id/player_settings_options"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+        </ScrollView>
+    </LinearLayout>
+
+    <LinearLayout
         android:id="@+id/recommendations_panel"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
@@ -377,37 +410,6 @@
                     android:textColor="#BFC0C5"
                     android:textSize="14sp" />
             </LinearLayout>
-
-            <EditText
-                android:id="@+id/search_input"
-                android:layout_width="420dp"
-                android:layout_height="52dp"
-                android:background="@drawable/tv_button_background"
-                android:focusable="true"
-                android:hint="@string/search_hint"
-                android:imeOptions="actionSearch"
-                android:inputType="text"
-                android:nextFocusLeft="@id/search_button"
-                android:nextFocusRight="@id/search_action_button"
-                android:nextFocusUp="@id/search_button"
-                android:paddingStart="20dp"
-                android:paddingEnd="20dp"
-                android:singleLine="true"
-                android:textColor="#FFFFFF"
-                android:textColorHint="#9A9CA3"
-                android:textSize="17sp" />
-
-            <Button
-                android:id="@+id/search_action_button"
-                android:layout_width="130dp"
-                android:layout_height="52dp"
-                android:layout_marginStart="10dp"
-                android:background="@drawable/tv_button_background"
-                android:focusable="true"
-                android:nextFocusLeft="@id/search_input"
-                android:nextFocusUp="@id/search_button"
-                android:text="@string/search_action"
-                android:textColor="@color/tv_button_text" />
         </LinearLayout>
 
         <ScrollView
@@ -510,24 +512,49 @@
             android:minWidth="0dp"
             android:nextFocusDown="@id/following_accounts_button"
             android:nextFocusLeft="@id/live_button"
-            android:nextFocusRight="@id/search_button"
+            android:nextFocusRight="@id/search_input"
             android:text="@string/account"
             android:textColor="@color/tv_button_text"
             android:textSize="16sp" />
 
-        <Button
-            android:id="@+id/search_button"
-            android:layout_width="104dp"
-            android:layout_height="52dp"
-            android:layout_marginStart="2dp"
-            android:background="@drawable/tab_button_background"
-            android:focusable="true"
-            android:minWidth="0dp"
-            android:nextFocusDown="@id/search_input"
-            android:nextFocusLeft="@id/login_button"
-            android:text="@string/search"
-            android:textColor="@color/tv_button_text"
-            android:textSize="16sp" />
+        <View
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <LinearLayout
+            android:id="@+id/search_field"
+            android:layout_width="320dp"
+            android:layout_height="48dp"
+            android:background="@drawable/search_field_background"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:layout_marginStart="8dp"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_search" />
+
+            <EditText
+                android:id="@+id/search_input"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:background="@null"
+                android:focusable="true"
+                android:hint="@string/search_hint"
+                android:imeOptions="actionSearch"
+                android:inputType="text"
+                android:nextFocusLeft="@id/login_button"
+                android:paddingStart="10dp"
+                android:paddingEnd="8dp"
+                android:singleLine="true"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#9A9CA3"
+                android:textSize="16sp" />
+        </LinearLayout>
     </LinearLayout>
 
     <LinearLayout
@@ -535,6 +562,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="#101114"
+        android:clipChildren="false"
         android:focusable="false"
         android:gravity="center"
         android:orientation="horizontal"
@@ -558,6 +586,7 @@
             android:layout_width="440dp"
             android:layout_height="wrap_content"
             android:layout_marginStart="36dp"
+            android:clipChildren="false"
             android:orientation="vertical">
 
             <TextView

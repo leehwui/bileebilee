@@ -2,14 +2,14 @@
 
 A lightweight, remote-first Bilibili client for Android TV, initially targeting the Xiaomi Mi Box 3 Enhanced Edition running Android 5.1 (API 22).
 
-## Current milestone (1.0.0)
+## Current milestone (1.0.1)
 
 The current build provides:
 
 - A recommendation-first landing page with persistent TV navigation tabs
 - Compact, focus-activated navigation with no extra confirmation click
 - Deterministic Down navigation from top tabs to each page's visible header controls
-- Remote-friendly video search with TV/physical keyboard input
+- A right-aligned navbar search field with a minimal underline treatment and TV/physical keyboard input
 - Paginated search results with playback and focus-preserving Back navigation
 - Focus and loaded-content preservation while switching sections
 - Two complete content rows with row-aligned TV scrolling
@@ -33,6 +33,7 @@ The current build provides:
 - Persistent mobile feed identity, app-style request context, and cursor-based refreshes
 - A four-column TV video grid with covers, metadata, and remote focus states
 - Progressive video playback for recommended videos
+- Overscan-safe playback controls with remote-friendly speed and audio settings
 - Account-synced, cursor-paginated watch history
 - Stored progress display and resume playback for history videos
 - Periodic and final playback heartbeats that update Bilibili history

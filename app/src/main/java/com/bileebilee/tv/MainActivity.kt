@@ -15,6 +15,7 @@ import android.view.inputmethod.InputMethodManager
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.GridLayout
@@ -25,6 +26,8 @@ import android.widget.TextView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.C
+import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
@@ -44,13 +47,13 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
+@androidx.annotation.OptIn(markerClass = [UnstableApi::class])
 class MainActivity : Activity() {
     private lateinit var navigationBar: LinearLayout
     private lateinit var recommendationsButton: Button
     private lateinit var historyButton: Button
     private lateinit var liveButton: Button
     private lateinit var loginButton: Button
-    private lateinit var searchNavButton: Button
     private lateinit var loginPanel: LinearLayout
     private lateinit var loginDetails: LinearLayout
     private lateinit var loginTitle: TextView
@@ -60,6 +63,10 @@ class MainActivity : Activity() {
     private lateinit var newQrButton: Button
     private lateinit var playerView: PlayerView
     private lateinit var playerHint: TextView
+    private lateinit var playerSettingsPanel: LinearLayout
+    private lateinit var playerSettingsTitle: TextView
+    private lateinit var playerSettingsScroll: ScrollView
+    private lateinit var playerSettingsOptions: LinearLayout
     private lateinit var recommendationsPanel: LinearLayout
     private lateinit var recommendationsStatus: TextView
     private lateinit var recommendationsScroll: ScrollView
@@ -84,8 +91,8 @@ class MainActivity : Activity() {
     private lateinit var followingBackButton: Button
     private lateinit var searchPanel: LinearLayout
     private lateinit var searchStatus: TextView
+    private lateinit var searchField: LinearLayout
     private lateinit var searchInput: EditText
-    private lateinit var searchActionButton: Button
     private lateinit var searchScroll: ScrollView
     private lateinit var searchGrid: GridLayout
     private lateinit var authClient: BilibiliAuthClient
@@ -149,6 +156,8 @@ class MainActivity : Activity() {
     private var searchHasMore = false
     private var searchLoading = false
     private var searchReturnFocus: View? = null
+    private var playerRevealKeyCode = KeyEvent.KEYCODE_UNKNOWN
+    private var playerControlsVisible = false
     private var playbackHeartbeatCall: Call? = null
     private var activePlaybackTracking: BilibiliAuthClient.PlaybackTracking? = null
     private var playbackStartedAt = 0L
@@ -160,6 +169,17 @@ class MainActivity : Activity() {
     }
     private val mainHandler = Handler(Looper.getMainLooper())
     private val qrPollRunnable = Runnable { qrKey?.let(::pollQr) }
+    private val playerHintHideRunnable = Runnable {
+        if (player != null && playerHint.visibility == View.VISIBLE) {
+            playerHint.animate()
+                .alpha(0f)
+                .setDuration(PLAYER_HINT_FADE_MS)
+                .withEndAction {
+                    if (player != null) playerHint.visibility = View.GONE
+                }
+                .start()
+        }
+    }
     private val playbackHeartbeatRunnable = object : Runnable {
         override fun run() {
             reportPlaybackHeartbeat()
@@ -178,7 +198,6 @@ class MainActivity : Activity() {
         historyButton = findViewById(R.id.history_button)
         liveButton = findViewById(R.id.live_button)
         loginButton = findViewById(R.id.login_button)
-        searchNavButton = findViewById(R.id.search_button)
         loginPanel = findViewById(R.id.login_panel)
         loginDetails = findViewById(R.id.login_details)
         loginTitle = findViewById(R.id.login_title)
@@ -210,25 +229,35 @@ class MainActivity : Activity() {
         followingBackButton = findViewById(R.id.following_back_button)
         searchPanel = findViewById(R.id.search_panel)
         searchStatus = findViewById(R.id.search_status)
+        searchField = findViewById(R.id.search_field)
         searchInput = findViewById(R.id.search_input)
-        searchActionButton = findViewById(R.id.search_action_button)
         searchScroll = findViewById(R.id.search_scroll)
         searchGrid = findViewById(R.id.search_grid)
         recommendationsButton.isAllCaps = false
         historyButton.isAllCaps = false
         liveButton.isAllCaps = false
         loginButton.isAllCaps = false
-        searchNavButton.isAllCaps = false
         newQrButton.isAllCaps = false
         playerView = findViewById(R.id.player_view)
         playerHint = findViewById(R.id.player_hint)
+        playerSettingsPanel = findViewById(R.id.player_settings_panel)
+        playerSettingsTitle = findViewById(R.id.player_settings_title)
+        playerSettingsScroll = findViewById(R.id.player_settings_scroll)
+        playerSettingsOptions = findViewById(R.id.player_settings_options)
+        applyPlayerControllerSafeArea()
+        playerView.findViewById<View>(androidx.media3.ui.R.id.exo_settings)
+            ?.setOnClickListener { showPlayerSettingsMain() }
+        playerView.setControllerVisibilityListener(
+            PlayerView.ControllerVisibilityListener { visibility ->
+                playerControlsVisible = visibility == View.VISIBLE
+            }
+        )
         authClient = BilibiliAuthClient(this, httpClient)
 
         recommendationsButton.setOnClickListener { showRecommendations(focusContent = false) }
         historyButton.setOnClickListener { showHistory(focusContent = false) }
         liveButton.setOnClickListener { showLiveRooms(focusContent = false) }
         loginButton.setOnClickListener { showAccount() }
-        searchNavButton.setOnClickListener { showSearch(focusInput = false) }
         followingAccountsButton.setOnClickListener { showFollowingCreators(reset = true) }
         newQrButton.setOnClickListener { startQrLogin() }
         refreshRecommendationsButton.setOnClickListener { refreshRecommendations() }
@@ -239,7 +268,9 @@ class MainActivity : Activity() {
             selectLiveSource(BilibiliAuthClient.LiveSource.POPULAR)
         }
         followingBackButton.setOnClickListener { showFollowingCreators(reset = false) }
-        searchActionButton.setOnClickListener { submitSearch() }
+        searchInput.setOnFocusChangeListener { _, hasFocus ->
+            searchField.isActivated = hasFocus
+        }
         searchInput.setOnEditorActionListener { _, actionId, event ->
             val enterEvent = event?.keyCode == KeyEvent.KEYCODE_ENTER
             if (actionId == EditorInfo.IME_ACTION_SEARCH || enterEvent) {
@@ -256,16 +287,13 @@ class MainActivity : Activity() {
         popularLiveButton.isAllCaps = false
         followingAccountsButton.isAllCaps = false
         followingBackButton.isAllCaps = false
-        searchActionButton.isAllCaps = false
         installNavigationTab(recommendationsButton, BrowseScreen.RECOMMENDATIONS)
         installNavigationTab(historyButton, BrowseScreen.HISTORY)
         installNavigationTab(liveButton, BrowseScreen.LIVE)
         installNavigationTab(loginButton, BrowseScreen.ACCOUNT)
-        installNavigationTab(searchNavButton, BrowseScreen.SEARCH)
         installFocusFeedback(newQrButton)
         installFocusFeedback(followingAccountsButton)
         installFocusFeedback(followingBackButton)
-        installFocusFeedback(searchActionButton)
 
         checkAccount()
         showRecommendations(focusContent = false)
@@ -281,6 +309,181 @@ class MainActivity : Activity() {
                 .start()
         }
     }
+
+    private fun applyPlayerControllerSafeArea() {
+        insetPlayerControllerView(
+            androidx.media3.ui.R.id.exo_bottom_bar,
+            sideInsetDp = PLAYER_CONTROLS_SIDE_INSET_DP,
+            bottomInsetDp = PLAYER_CONTROLS_BOTTOM_INSET_DP
+        )
+        insetPlayerControllerView(
+            androidx.media3.ui.R.id.exo_progress,
+            sideInsetDp = PLAYER_CONTROLS_SIDE_INSET_DP,
+            bottomInsetDp = PLAYER_CONTROLS_BOTTOM_INSET_DP
+        )
+        insetPlayerControllerView(
+            androidx.media3.ui.R.id.exo_minimal_controls,
+            sideInsetDp = PLAYER_CONTROLS_SIDE_INSET_DP,
+            bottomInsetDp = PLAYER_CONTROLS_BOTTOM_INSET_DP
+        )
+    }
+
+    private fun insetPlayerControllerView(
+        viewId: Int,
+        sideInsetDp: Int,
+        bottomInsetDp: Int
+    ) {
+        val control = playerView.findViewById<View>(viewId) ?: return
+        val params = control.layoutParams as? ViewGroup.MarginLayoutParams ?: return
+        params.marginStart += dp(sideInsetDp)
+        params.marginEnd += dp(sideInsetDp)
+        params.bottomMargin += dp(bottomInsetDp)
+        control.layoutParams = params
+    }
+
+    private fun showPlayerSettingsMain() {
+        val exoPlayer = player ?: return
+        showPlayerSettings(
+            getString(R.string.player_settings_title),
+            listOf(
+                "${getString(R.string.player_speed)}  •  ${formatPlaybackSpeed(exoPlayer.playbackParameters.speed)}" to
+                    ::showPlayerSpeedSettings,
+                "${getString(R.string.player_audio)}  •  ${selectedAudioLabel(exoPlayer)}" to
+                    ::showPlayerAudioSettings
+            )
+        )
+    }
+
+    private fun showPlayerSpeedSettings() {
+        val exoPlayer = player ?: return
+        val speeds = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
+        showPlayerSettings(
+            getString(R.string.player_speed),
+            speeds.map { speed ->
+                val selected = kotlin.math.abs(exoPlayer.playbackParameters.speed - speed) < 0.01f
+                (if (selected) "✓  " else "") + formatPlaybackSpeed(speed) to {
+                    exoPlayer.setPlaybackSpeed(speed)
+                    hidePlayerSettings()
+                }
+            }
+        )
+    }
+
+    private fun showPlayerAudioSettings() {
+        val exoPlayer = player ?: return
+        val choices = mutableListOf<Pair<String, () -> Unit>>()
+        choices += "Auto" to {
+            exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+                .buildUpon()
+                .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                .build()
+            hidePlayerSettings()
+        }
+        exoPlayer.currentTracks.groups
+            .filter { it.type == C.TRACK_TYPE_AUDIO }
+            .forEach { group ->
+                for (trackIndex in 0 until group.length) {
+                    if (!group.isTrackSupported(trackIndex)) continue
+                    val format = group.getTrackFormat(trackIndex)
+                    val label = format.label?.takeUnless(String::isBlank)
+                        ?: format.language?.takeUnless(String::isBlank)
+                            ?.let { Locale.forLanguageTag(it).displayLanguage }
+                            ?.takeUnless(String::isBlank)
+                        ?: "Audio ${choices.size}"
+                    val selectedPrefix = if (group.isTrackSelected(trackIndex)) "✓  " else ""
+                    choices += "$selectedPrefix$label" to {
+                        exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+                            .buildUpon()
+                            .setOverrideForType(
+                                TrackSelectionOverride(group.mediaTrackGroup, trackIndex)
+                            )
+                            .build()
+                        hidePlayerSettings()
+                    }
+                }
+            }
+        showPlayerSettings(getString(R.string.player_audio), choices.distinctBy { it.first })
+    }
+
+    private fun showPlayerSettings(
+        title: String,
+        options: List<Pair<String, () -> Unit>>
+    ) {
+        playerView.setControllerShowTimeoutMs(0)
+        playerView.showController()
+        playerSettingsTitle.text = title
+        playerSettingsOptions.removeAllViews()
+        options.forEachIndexed { index, (label, action) ->
+            val button = Button(this).apply {
+                id = View.generateViewId()
+                isAllCaps = false
+                text = label
+                textSize = 17f
+                setTextColor(Color.WHITE)
+                gravity = android.view.Gravity.CENTER_VERTICAL or android.view.Gravity.START
+                isFocusable = true
+                isFocusableInTouchMode = true
+                background = getDrawable(R.drawable.player_settings_option_background)
+                setPadding(dp(24), 0, dp(18), 0)
+                setOnClickListener { action() }
+            }
+            playerSettingsOptions.addView(
+                button,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    dp(PLAYER_SETTINGS_ROW_HEIGHT_DP)
+                ).apply {
+                    if (index > 0) topMargin = dp(PLAYER_SETTINGS_ROW_GAP_DP)
+                }
+            )
+        }
+        for (index in 0 until playerSettingsOptions.childCount) {
+            val option = playerSettingsOptions.getChildAt(index)
+            option.nextFocusUpId = playerSettingsOptions
+                .getChildAt(maxOf(0, index - 1)).id
+            option.nextFocusDownId = playerSettingsOptions
+                .getChildAt(minOf(playerSettingsOptions.childCount - 1, index + 1)).id
+        }
+        playerSettingsScroll.layoutParams = playerSettingsScroll.layoutParams.apply {
+            height = dp(
+                minOf(
+                    options.size * PLAYER_SETTINGS_ROW_HEIGHT_DP +
+                        maxOf(0, options.size - 1) * PLAYER_SETTINGS_ROW_GAP_DP,
+                    PLAYER_SETTINGS_MAX_LIST_HEIGHT_DP
+                )
+            )
+        }
+        playerSettingsPanel.visibility = View.VISIBLE
+        playerSettingsScroll.scrollTo(0, 0)
+        playerSettingsOptions.getChildAt(0)?.let { firstOption ->
+            firstOption.post {
+                playerView.clearFocus()
+                firstOption.requestFocus()
+            }
+        }
+    }
+
+    private fun hidePlayerSettings() {
+        playerSettingsPanel.visibility = View.GONE
+        playerSettingsOptions.removeAllViews()
+        playerView.setControllerShowTimeoutMs(PLAYER_CONTROLS_TIMEOUT_MS)
+        playerView.showController()
+    }
+
+    private fun selectedAudioLabel(exoPlayer: ExoPlayer): String = exoPlayer.currentTracks.groups
+        .firstNotNullOfOrNull { group ->
+            if (group.type != C.TRACK_TYPE_AUDIO) return@firstNotNullOfOrNull null
+            (0 until group.length).firstOrNull(group::isTrackSelected)?.let { index ->
+                val format = group.getTrackFormat(index)
+                format.label?.takeUnless(String::isBlank)
+                    ?: format.language?.takeUnless(String::isBlank)
+                        ?.let { Locale.forLanguageTag(it).displayLanguage }
+            }
+        }?.takeUnless(String::isBlank)
+        ?: "Auto"
+
+    private fun formatPlaybackSpeed(speed: Float): String =
+        if (speed % 1f == 0f) "${speed.toInt()}×" else "$speed×"
 
     private fun installNavigationTab(button: Button, screen: BrowseScreen) {
         button.setOnFocusChangeListener { _, hasFocus ->
@@ -402,18 +605,17 @@ class MainActivity : Activity() {
         showRecommendations()
     }
 
-    private fun updateNavigation(activeButton: Button) {
+    private fun updateNavigation(activeButton: Button?) {
         navigationBar.visibility = View.VISIBLE
         recommendationsButton.isActivated = activeButton === recommendationsButton
         historyButton.isActivated = activeButton === historyButton
         liveButton.isActivated = activeButton === liveButton
         loginButton.isActivated = activeButton === loginButton
-        searchNavButton.isActivated = activeButton === searchNavButton
     }
 
     private fun navigationHasFocus(): Boolean =
         recommendationsButton.hasFocus() || historyButton.hasFocus() ||
-            liveButton.hasFocus() || loginButton.hasFocus() || searchNavButton.hasFocus()
+            liveButton.hasFocus() || loginButton.hasFocus() || searchInput.hasFocus()
 
     private fun selectLiveSource(source: BilibiliAuthClient.LiveSource) {
         liveRoomsCall?.cancel()
@@ -1050,7 +1252,7 @@ class MainActivity : Activity() {
         followingPanel.visibility = View.GONE
         searchPanel.visibility = View.VISIBLE
         currentBrowseScreen = BrowseScreen.SEARCH
-        updateNavigation(searchNavButton)
+        updateNavigation(null)
         searchStatus.text = if (searchQuery.isBlank()) {
             getString(R.string.search_prompt)
         } else {
@@ -1061,6 +1263,7 @@ class MainActivity : Activity() {
 
     private fun submitSearch() {
         val query = searchInput.text.toString().trim()
+        showSearch(focusInput = false)
         if (query.isBlank()) {
             searchStatus.text = "Enter something to search for."
             searchInput.requestFocus()
@@ -1090,13 +1293,11 @@ class MainActivity : Activity() {
         } else {
             "Loading more search results…"
         }
-        searchActionButton.isEnabled = false
         lateinit var requestCall: Call
         try {
             requestCall = authClient.fetchSearchVideos(searchQuery, requestedPage) { result ->
                 runOnUiThread {
                     if (searchCall !== requestCall) return@runOnUiThread
-                    searchActionButton.isEnabled = true
                     if (searchPanel.visibility != View.VISIBLE) {
                         searchLoading = false
                         return@runOnUiThread
@@ -1127,7 +1328,6 @@ class MainActivity : Activity() {
             }
         } catch (error: IllegalStateException) {
             searchLoading = false
-            searchActionButton.isEnabled = true
             searchStatus.text = "Search is still starting up. Please try again."
             searchInput.requestFocus()
             return
@@ -1153,15 +1353,10 @@ class MainActivity : Activity() {
                 .inflate(R.layout.recommendation_card, searchGrid, false)
             card.id = View.generateViewId()
             if (index < GRID_COLUMN_COUNT) {
-                card.nextFocusUpId = if (index < GRID_COLUMN_COUNT - 1) {
-                    R.id.search_input
-                } else {
-                    R.id.search_action_button
-                }
+                card.nextFocusUpId = R.id.search_input
             }
             if (index == 0) {
                 searchInput.nextFocusDownId = card.id
-                searchActionButton.nextFocusDownId = card.id
             }
             val title = cleanSearchText(video.title)
             val duration = normalizeSearchDuration(video.duration)
@@ -1257,6 +1452,10 @@ class MainActivity : Activity() {
             return
         }
         cancelQrLogin()
+        // Keep focus on a visible Account control while the first creator page loads.
+        // Otherwise older Android TV versions may move focus to the first nav tab when
+        // the focused Following button is hidden, which navigates back to recommendations.
+        loginButton.requestFocus()
         recommendationsPanel.visibility = View.GONE
         historyPanel.visibility = View.GONE
         livePanel.visibility = View.GONE
@@ -1418,6 +1617,7 @@ class MainActivity : Activity() {
         followingTitle.text = creator.name
         followingBackButton.visibility = View.VISIBLE
         loginButton.nextFocusDownId = R.id.following_back_button
+        followingBackButton.requestFocus()
         if (reset || creatorVideos.isEmpty()) {
             creatorVideosCall?.cancel()
             creatorVideosLoading = false
@@ -1836,8 +2036,15 @@ class MainActivity : Activity() {
                     override fun onPlayerError(error: PlaybackException) {
                         showPlaybackError(error)
                     }
+
+                    override fun onPlaybackStateChanged(playbackState: Int) {
+                        if (playbackState == Player.STATE_READY) schedulePlayerHintHide()
+                    }
                 })
                 playerView.player = exoPlayer
+                playerView.setControllerShowTimeoutMs(PLAYER_CONTROLS_TIMEOUT_MS)
+                playerView.setControllerAutoShow(false)
+                playerView.hideController()
                 navigationBar.visibility = View.GONE
                 recommendationsPanel.visibility = View.GONE
                 historyPanel.visibility = View.GONE
@@ -1846,6 +2053,9 @@ class MainActivity : Activity() {
                 followingPanel.visibility = View.GONE
                 searchPanel.visibility = View.GONE
                 playerView.visibility = View.VISIBLE
+                mainHandler.removeCallbacks(playerHintHideRunnable)
+                playerHint.animate().cancel()
+                playerHint.alpha = 1f
                 playerHint.visibility = View.VISIBLE
                 exoPlayer.setMediaItem(MediaItem.fromUri(url))
                 if (startPositionMs > 0L) exoPlayer.seekTo(startPositionMs)
@@ -1853,6 +2063,11 @@ class MainActivity : Activity() {
                 exoPlayer.playWhenReady = true
                 startPlaybackTracking(tracking)
             }
+    }
+
+    private fun schedulePlayerHintHide() {
+        mainHandler.removeCallbacks(playerHintHideRunnable)
+        mainHandler.postDelayed(playerHintHideRunnable, PLAYER_HINT_VISIBLE_MS)
     }
 
     private fun startPlaybackTracking(tracking: BilibiliAuthClient.PlaybackTracking?) {
@@ -1890,6 +2105,13 @@ class MainActivity : Activity() {
     }
 
     private fun releasePlayer() {
+        mainHandler.removeCallbacks(playerHintHideRunnable)
+        playerRevealKeyCode = KeyEvent.KEYCODE_UNKNOWN
+        playerControlsVisible = false
+        playerSettingsPanel.visibility = View.GONE
+        playerSettingsOptions.removeAllViews()
+        playerHint.animate().cancel()
+        playerHint.alpha = 1f
         playerView.player = null
         player?.release()
         player = null
@@ -1935,7 +2157,7 @@ class MainActivity : Activity() {
             }
             PlaybackReturnScreen.SEARCH -> {
                 currentBrowseScreen = BrowseScreen.SEARCH
-                updateNavigation(searchNavButton)
+                updateNavigation(null)
                 searchPanel.visibility = View.VISIBLE
                 searchStatus.text = searchSummary()
             }
@@ -1970,19 +2192,63 @@ class MainActivity : Activity() {
         }
     }
 
-    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_BACK && player != null) {
-            val returnScreen = playbackReturnScreen
-            stopPlayback()
-            when (returnScreen) {
-                PlaybackReturnScreen.RECOMMENDATIONS -> restoreRecommendationFocus()
-                PlaybackReturnScreen.HISTORY -> restoreHistoryFocus()
-                PlaybackReturnScreen.LIVE -> restoreLiveFocus()
-                PlaybackReturnScreen.FOLLOWING -> restoreFollowingFocus(creatorVideoFocusIndex)
-                PlaybackReturnScreen.SEARCH -> restoreSearchFocus()
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (player != null) {
+            if (event.keyCode == KeyEvent.KEYCODE_BACK) {
+                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                    if (playerSettingsPanel.visibility == View.VISIBLE) {
+                        hidePlayerSettings()
+                    } else if (playerControlsVisible) {
+                        playerView.hideController()
+                    } else {
+                        stopPlaybackAndRestoreFocus()
+                    }
+                }
+                return true
             }
-            return true
+
+            if (isPlayerNavigationKey(event.keyCode)) {
+                if (event.action == KeyEvent.ACTION_UP &&
+                    playerRevealKeyCode == event.keyCode
+                ) {
+                    playerRevealKeyCode = KeyEvent.KEYCODE_UNKNOWN
+                    return true
+                }
+                if (event.action == KeyEvent.ACTION_DOWN &&
+                    !playerControlsVisible
+                ) {
+                    playerRevealKeyCode = event.keyCode
+                    playerView.showController()
+                    return true
+                }
+            }
         }
+        return super.dispatchKeyEvent(event)
+    }
+
+    private fun isPlayerNavigationKey(keyCode: Int): Boolean = when (keyCode) {
+        KeyEvent.KEYCODE_DPAD_UP,
+        KeyEvent.KEYCODE_DPAD_DOWN,
+        KeyEvent.KEYCODE_DPAD_LEFT,
+        KeyEvent.KEYCODE_DPAD_RIGHT,
+        KeyEvent.KEYCODE_DPAD_CENTER,
+        KeyEvent.KEYCODE_ENTER -> true
+        else -> false
+    }
+
+    private fun stopPlaybackAndRestoreFocus() {
+        val returnScreen = playbackReturnScreen
+        stopPlayback()
+        when (returnScreen) {
+            PlaybackReturnScreen.RECOMMENDATIONS -> restoreRecommendationFocus()
+            PlaybackReturnScreen.HISTORY -> restoreHistoryFocus()
+            PlaybackReturnScreen.LIVE -> restoreLiveFocus()
+            PlaybackReturnScreen.FOLLOWING -> restoreFollowingFocus(creatorVideoFocusIndex)
+            PlaybackReturnScreen.SEARCH -> restoreSearchFocus()
+        }
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK && loginPanel.visibility == View.VISIBLE) {
             hideAccount()
             return true
@@ -2016,15 +2282,8 @@ class MainActivity : Activity() {
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
     override fun onBackPressed() {
         if (player != null) {
-            val returnScreen = playbackReturnScreen
-            stopPlayback()
-            when (returnScreen) {
-                PlaybackReturnScreen.RECOMMENDATIONS -> restoreRecommendationFocus()
-                PlaybackReturnScreen.HISTORY -> restoreHistoryFocus()
-                PlaybackReturnScreen.LIVE -> restoreLiveFocus()
-                PlaybackReturnScreen.FOLLOWING -> restoreFollowingFocus(creatorVideoFocusIndex)
-                PlaybackReturnScreen.SEARCH -> restoreSearchFocus()
-            }
+            if (playerControlsVisible) playerView.hideController()
+            else stopPlaybackAndRestoreFocus()
         } else if (loginPanel.visibility == View.VISIBLE) {
             hideAccount()
         } else if (followingPanel.visibility == View.VISIBLE) {
@@ -2094,6 +2353,14 @@ class MainActivity : Activity() {
         const val TAB_SWITCH_DELAY_MS = 150L
         const val FIRST_HEARTBEAT_DELAY_MS = 5_000L
         const val HEARTBEAT_INTERVAL_MS = 15_000L
+        const val PLAYER_HINT_VISIBLE_MS = 3_500L
+        const val PLAYER_HINT_FADE_MS = 250L
+        const val PLAYER_CONTROLS_TIMEOUT_MS = 4_000
+        const val PLAYER_CONTROLS_SIDE_INSET_DP = 48
+        const val PLAYER_CONTROLS_BOTTOM_INSET_DP = 64
+        const val PLAYER_SETTINGS_ROW_HEIGHT_DP = 48
+        const val PLAYER_SETTINGS_ROW_GAP_DP = 0
+        const val PLAYER_SETTINGS_MAX_LIST_HEIGHT_DP = 264
         const val COVER_WIDTH_PX = 640
         const val COVER_HEIGHT_PX = 360
         const val GRID_SIDE_PADDING_DP = 72
