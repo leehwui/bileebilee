@@ -36,13 +36,13 @@ class CrashReportActivity : Activity() {
             setBackgroundColor(Color.rgb(16, 17, 20))
         }
         root.addView(TextView(this).apply {
-            text = "Bileebilee startup crash"
+            text = getString(R.string.crash_title)
             setTextColor(Color.rgb(251, 114, 153))
             textSize = 30f
             setTypeface(typeface, Typeface.BOLD)
         })
         root.addView(TextView(this).apply {
-            text = "Photograph this screen for diagnosis. Use the D-pad to scroll if needed."
+            text = getString(R.string.crash_instructions)
             setTextColor(Color.WHITE)
             textSize = 18f
             setPadding(0, dp(12), 0, dp(16))
@@ -66,7 +66,7 @@ class CrashReportActivity : Activity() {
         ))
 
         root.addView(Button(this).apply {
-            text = "Clear report and retry"
+            text = getString(R.string.crash_retry)
             isFocusable = true
             gravity = Gravity.CENTER
             setOnClickListener {

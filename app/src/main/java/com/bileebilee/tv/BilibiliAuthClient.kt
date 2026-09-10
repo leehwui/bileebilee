@@ -20,6 +20,7 @@ class BilibiliAuthClient(
     context: Context,
     private val httpClient: OkHttpClient
 ) {
+    private val appContext = context.applicationContext
     private val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
     private val deviceName = Build.MODEL.orEmpty().ifBlank { "Android TV" }
     private val buvid = stableIdentifier(BUVID_KEY, "XY", "infoc", 32)
@@ -77,14 +78,11 @@ class BilibiliAuthClient(
                         when (val code = data.getInt("code")) {
                             0 -> {
                                 saveSession(it, data.optString("url"))
-                                QrPollResult(QrState.AUTHENTICATED, "Signed in successfully")
+                                QrPollResult(QrState.AUTHENTICATED)
                             }
-                            86101 -> QrPollResult(QrState.WAITING_FOR_SCAN, "Waiting to be scanned…")
-                            86090 -> QrPollResult(
-                                QrState.WAITING_FOR_CONFIRMATION,
-                                "Scanned. Confirm sign-in on your phone."
-                            )
-                            86038 -> QrPollResult(QrState.EXPIRED, "This QR code has expired.")
+                            86101 -> QrPollResult(QrState.WAITING_FOR_SCAN)
+                            86090 -> QrPollResult(QrState.WAITING_FOR_CONFIRMATION)
+                            86038 -> QrPollResult(QrState.EXPIRED)
                             else -> error(data.optString("message", "QR login state $code"))
                         }
                     })
@@ -143,7 +141,7 @@ class BilibiliAuthClient(
                         add(
                             FollowedCreator(
                                 mid = mid,
-                                name = item.optString("uname", "Unknown creator"),
+                                name = item.optString("uname", appContext.getString(R.string.unknown_creator)),
                                 avatarUrl = item.optString("face").replace("http://", "https://"),
                                 description = item.optString("sign")
                             )
@@ -194,7 +192,7 @@ class BilibiliAuthClient(
                             CreatorVideo(
                                 aid = aid,
                                 cid = item.optLong("cid"),
-                                title = item.optString("title", "Untitled video"),
+                                title = item.optString("title", appContext.getString(R.string.untitled_video)),
                                 coverUrl = item.optString("pic").replace("http://", "https://"),
                                 uploader = item.optString("author").ifBlank { creator.name },
                                 viewCount = item.optString("play"),
@@ -267,7 +265,7 @@ class BilibiliAuthClient(
                         add(
                             SearchVideo(
                                 aid = aid,
-                                title = item.optString("title", "Untitled video"),
+                                title = item.optString("title", appContext.getString(R.string.untitled_video)),
                                 coverUrl = item.optString("pic").replace("http://", "https://"),
                                 uploader = item.optString("author"),
                                 viewCount = item.optString("play"),
@@ -372,7 +370,7 @@ class BilibiliAuthClient(
                         Recommendation(
                             aid = aid,
                             cid = cid,
-                            title = item.optString("title", "Untitled video"),
+                            title = item.optString("title", appContext.getString(R.string.untitled_video)),
                             coverUrl = item.optString("cover").replace("http://", "https://"),
                             uploader = item.optJSONObject("desc_button")?.optString("text").orEmpty(),
                             viewCount = item.optString("cover_left_text_1"),
@@ -454,7 +452,7 @@ class BilibiliAuthClient(
                         add(
                             LiveRoom(
                                 roomId = roomId,
-                                title = item.optString("title", "Untitled live room"),
+                                title = item.optString("title", appContext.getString(R.string.untitled_live_room)),
                                 coverUrl = cover,
                                 anchor = item.optString("uname"),
                                 popularity = item.optLong("online"),
@@ -539,7 +537,7 @@ class BilibiliAuthClient(
                                 cid = cid,
                                 epId = history.optLong("epid"),
                                 business = business,
-                                title = item.optString("title", "Untitled video"),
+                                title = item.optString("title", appContext.getString(R.string.untitled_video)),
                                 subtitle = item.optString("long_title"),
                                 coverUrl = item.optString("cover").replace("http://", "https://"),
                                 author = item.optString("author_name"),
@@ -805,7 +803,7 @@ class BilibiliAuthClient(
     }
 
     data class QrChallenge(val url: String, val key: String)
-    data class QrPollResult(val state: QrState, val message: String)
+    data class QrPollResult(val state: QrState)
     data class Account(val mid: Long, val name: String)
     data class FollowedCreator(
         val mid: Long,

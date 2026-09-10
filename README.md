@@ -1,5 +1,7 @@
 # Bileebilee
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 A lightweight, remote-first Bilibili client for Android TV, initially targeting the Xiaomi Mi Box 3 Enhanced Edition running Android 5.1 (API 22).
 
 ## Current milestone (1.0.1)
@@ -18,6 +20,7 @@ The current build provides:
 - An explicit recommendation refresh action that starts a fresh mobile feed at page one
 - Consistent TV safe-area padding and comfortably spaced content cards
 - D-pad focus navigation
+- English and Simplified Chinese localization using the system or per-app language setting
 - Bilibili QR-code login with private on-device session storage
 - A signed-in account view with nickname and UID
 - Paginated browsing of followed creators from the Account page
@@ -70,7 +73,7 @@ The packaged APK is written to `app/build/outputs/distribution/Bileebilee-TV-v<v
 ```bash
 $ANDROID_HOME/emulator/emulator -avd Bileebilee_TV_API_34
 $ANDROID_HOME/platform-tools/adb install -r app/build/outputs/apk/debug/app-debug.apk
-$ANDROID_HOME/platform-tools/adb shell am start -n com.bileebilee.tv/.MainActivity
+$ANDROID_HOME/platform-tools/adb shell am start -n com.bileebilee.tv/.CrashReportActivity
 ```
 
 The emulator is ARM64 Android TV API 34 at 1920x1080 with 2 GB RAM.

@@ -42,7 +42,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import java.io.IOException
-import java.text.SimpleDateFormat
+import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -372,7 +372,7 @@ class MainActivity : Activity() {
     private fun showPlayerAudioSettings() {
         val exoPlayer = player ?: return
         val choices = mutableListOf<Pair<String, () -> Unit>>()
-        choices += "Auto" to {
+        choices += getString(R.string.automatic) to {
             exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
                 .buildUpon()
                 .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
@@ -389,7 +389,7 @@ class MainActivity : Activity() {
                         ?: format.language?.takeUnless(String::isBlank)
                             ?.let { Locale.forLanguageTag(it).displayLanguage }
                             ?.takeUnless(String::isBlank)
-                        ?: "Audio ${choices.size}"
+                        ?: getString(R.string.audio_track, choices.size)
                     val selectedPrefix = if (group.isTrackSelected(trackIndex)) "✓  " else ""
                     choices += "$selectedPrefix$label" to {
                         exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
@@ -480,7 +480,7 @@ class MainActivity : Activity() {
                         ?.let { Locale.forLanguageTag(it).displayLanguage }
             }
         }?.takeUnless(String::isBlank)
-        ?: "Auto"
+        ?: getString(R.string.automatic)
 
     private fun formatPlaybackSpeed(speed: Float): String =
         if (speed % 1f == 0f) "${speed.toInt()}×" else "$speed×"
@@ -635,12 +635,12 @@ class MainActivity : Activity() {
             }
         )
         followingLiveButton.text = if (source == BilibiliAuthClient.LiveSource.FOLLOWING) {
-            "${getString(R.string.following)} ✓"
+            getString(R.string.selected_option, getString(R.string.following))
         } else {
             getString(R.string.following)
         }
         popularLiveButton.text = if (source == BilibiliAuthClient.LiveSource.POPULAR) {
-            "${getString(R.string.popular)} ✓"
+            getString(R.string.selected_option, getString(R.string.popular))
         } else {
             getString(R.string.popular)
         }
@@ -655,11 +655,11 @@ class MainActivity : Activity() {
         val source = liveSource
         val firstPage = livePage == 0
         liveStatus.text = if (!firstPage) {
-            "Loading more live rooms…"
+            getString(R.string.loading_more_live)
         } else if (source == BilibiliAuthClient.LiveSource.FOLLOWING) {
-            "Loading followed live rooms…"
+            getString(R.string.loading_followed_live)
         } else {
-            "Loading popular live rooms…"
+            getString(R.string.loading_popular_live)
         }
         lateinit var requestCall: Call
         requestCall = authClient.fetchLiveRooms(source) { result ->
@@ -677,9 +677,9 @@ class MainActivity : Activity() {
                         liveLoading = false
                         liveStatus.text = if (liveGrid.childCount == 0) {
                             if (source == BilibiliAuthClient.LiveSource.FOLLOWING) {
-                                "None of the accounts you follow are live right now."
+                                getString(R.string.no_followed_live)
                             } else {
-                                "No active live rooms were returned."
+                                getString(R.string.no_popular_live)
                             }
                         } else {
                             liveSummary()
@@ -692,7 +692,7 @@ class MainActivity : Activity() {
                     },
                     onFailure = { error ->
                         liveLoading = false
-                        liveStatus.text = "Live-room request failed: ${error.message.orEmpty()}"
+                        liveStatus.text = getString(R.string.live_request_failed)
                         if (firstPage && !navigationHasFocus()) selectedLiveSourceButton().requestFocus()
                     }
                 )
@@ -770,16 +770,18 @@ class MainActivity : Activity() {
     }
 
     private fun formatPopularity(value: Long): String = when {
-        value >= 1_000_000L -> String.format(Locale.US, "%.1fm", value / 1_000_000.0)
-        value >= 1_000L -> String.format(Locale.US, "%.1fk", value / 1_000.0)
-        value > 0L -> value.toString()
-        else -> "Live"
+        value >= 1_000_000L -> String.format(Locale.getDefault(), "%.1fm", value / 1_000_000.0)
+        value >= 1_000L -> String.format(Locale.getDefault(), "%.1fk", value / 1_000.0)
+        value > 0L -> String.format(Locale.getDefault(), "%,d", value)
+        else -> getString(R.string.live_label)
     }
 
-    private fun liveSummary(): String =
-        "${liveGrid.childCount} live • " +
-            "${if (liveSource == BilibiliAuthClient.LiveSource.FOLLOWING) "Following" else "Popular"} " +
-            "• Page $livePage" + if (liveHasMore) " • Scroll for more" else ""
+    private fun liveSummary(): String = joinStatus(
+        resources.getQuantityString(R.plurals.live_room_count, liveGrid.childCount, liveGrid.childCount),
+        getString(if (liveSource == BilibiliAuthClient.LiveSource.FOLLOWING) R.string.following else R.string.popular),
+        getString(R.string.page_number, livePage),
+        getString(R.string.scroll_for_more).takeIf { liveHasMore }
+    )
 
     private fun selectedLiveSourceButton(): Button =
         if (liveSource == BilibiliAuthClient.LiveSource.FOLLOWING) {
@@ -797,7 +799,7 @@ class MainActivity : Activity() {
 
     private fun playLiveRoom(room: BilibiliAuthClient.LiveRoom) {
         liveStreamCall?.cancel()
-        liveStatus.text = "Opening ${room.title}…"
+        liveStatus.text = getString(R.string.opening_item, room.title)
         liveStreamCall = authClient.fetchLiveStreamUrl(room) { result ->
             runOnUiThread {
                 result.fold(
@@ -810,7 +812,7 @@ class MainActivity : Activity() {
                         )
                     },
                     onFailure = { error ->
-                        liveStatus.text = "Could not play live room: ${error.message.orEmpty()}"
+                        liveStatus.text = getString(R.string.play_live_failed)
                         restoreLiveFocus()
                     }
                 )
@@ -823,9 +825,9 @@ class MainActivity : Activity() {
         historyLoading = true
         val firstPage = historyPage == 0
         historyStatus.text = if (firstPage) {
-            "Loading account watch history…"
+            getString(R.string.loading_history)
         } else {
-            "Loading more watch history…"
+            getString(R.string.loading_more_history)
         }
         lateinit var requestCall: Call
         requestCall = authClient.fetchHistory { result ->
@@ -843,8 +845,8 @@ class MainActivity : Activity() {
                         renderHistory(page.items, append = !firstPage)
                         historyLoading = false
                         historyStatus.text = if (historyGrid.childCount == 0) {
-                            if (!page.hasMore) "No playable watch history was returned." else
-                                "Looking for playable history entries…"
+                            if (!page.hasMore) getString(R.string.no_history) else
+                                getString(R.string.looking_for_history)
                         } else {
                             historySummary()
                         }
@@ -857,7 +859,7 @@ class MainActivity : Activity() {
                     },
                     onFailure = { error ->
                         historyLoading = false
-                        historyStatus.text = "History request failed: ${error.message.orEmpty()}"
+                        historyStatus.text = getString(R.string.history_request_failed)
                         if (firstPage && !navigationHasFocus()) historyButton.requestFocus()
                     }
                 )
@@ -933,7 +935,9 @@ class MainActivity : Activity() {
 
     private fun historyProgress(progress: Long, duration: Long): String {
         if (duration <= 0L) return ""
-        if (progress < 0L || progress >= duration) return "Watched • ${formatDuration(duration)}"
+        if (progress < 0L || progress >= duration) {
+            return getString(R.string.watched_duration, formatDuration(duration))
+        }
         if (progress == 0L) return formatDuration(duration)
         return "${formatDuration(progress)} / ${formatDuration(duration)}"
     }
@@ -943,22 +947,29 @@ class MainActivity : Activity() {
         val minutes = (seconds % 3600L) / 60L
         val remainingSeconds = seconds % 60L
         return if (hours > 0L) {
-            String.format(Locale.US, "%d:%02d:%02d", hours, minutes, remainingSeconds)
+            String.format(Locale.getDefault(), "%d:%02d:%02d", hours, minutes, remainingSeconds)
         } else {
-            String.format(Locale.US, "%d:%02d", minutes, remainingSeconds)
+            String.format(Locale.getDefault(), "%d:%02d", minutes, remainingSeconds)
         }
     }
 
     private fun viewedAt(timestamp: Long): String {
         if (timestamp <= 0L) return ""
-        return SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
+        return DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
             .format(Date(timestamp * 1_000L))
     }
 
     private fun historySummary(): String {
-        val skipped = if (historySkipped > 0) " • $historySkipped unsupported" else ""
-        val more = if (historyHasMore) " • Scroll for more" else ""
-        return "${historyGrid.childCount} playable • Page $historyPage$skipped$more"
+        return joinStatus(
+            resources.getQuantityString(R.plurals.playable_count, historyGrid.childCount, historyGrid.childCount),
+            getString(R.string.page_number, historyPage),
+            resources.getQuantityString(
+                R.plurals.unsupported_count,
+                historySkipped,
+                historySkipped
+            ).takeIf { historySkipped > 0 },
+            getString(R.string.scroll_for_more).takeIf { historyHasMore }
+        )
     }
 
     private fun restoreHistoryFocus() {
@@ -970,7 +981,7 @@ class MainActivity : Activity() {
 
     private fun playHistory(item: BilibiliAuthClient.HistoryItem) {
         videoCall?.cancel()
-        historyStatus.text = "Opening ${item.title}…"
+        historyStatus.text = getString(R.string.opening_item, item.title)
         videoCall = authClient.fetchHistoryVideoUrl(item) { result ->
             runOnUiThread {
                 result.fold(
@@ -998,7 +1009,7 @@ class MainActivity : Activity() {
                         )
                     },
                     onFailure = { error ->
-                        historyStatus.text = "Could not play history item: ${error.message.orEmpty()}"
+                        historyStatus.text = getString(R.string.play_history_failed)
                     }
                 )
             }
@@ -1010,9 +1021,9 @@ class MainActivity : Activity() {
         recommendationsLoading = true
         val firstPage = recommendationPage == 0
         recommendationsStatus.text = if (firstPage) {
-            "Loading the mobile recommendation feed…"
+            getString(R.string.loading_recommendations)
         } else {
-            "Loading more recommendations…"
+            getString(R.string.loading_more_recommendations)
         }
         refreshRecommendationsButton.isEnabled = false
         lateinit var requestCall: Call
@@ -1028,7 +1039,7 @@ class MainActivity : Activity() {
                         renderRecommendations(page.videos, append = !firstPage)
                         recommendationsLoading = false
                         recommendationsStatus.text = if (recommendationsGrid.childCount == 0) {
-                            "No playable videos were returned."
+                            getString(R.string.no_recommendations)
                         } else {
                             recommendationSummary()
                         }
@@ -1041,10 +1052,9 @@ class MainActivity : Activity() {
                             recommendationsGrid.post { loadRecommendations() }
                         }
                     },
-                    onFailure = { error ->
+                    onFailure = {
                         recommendationsLoading = false
-                        recommendationsStatus.text =
-                            "Recommendation request failed: ${error.message.orEmpty()}"
+                        recommendationsStatus.text = getString(R.string.recommendations_request_failed)
                         if (!navigationHasFocus() && recommendationsPanel.visibility == View.VISIBLE) {
                             refreshRecommendationsButton.requestFocus()
                         }
@@ -1206,10 +1216,18 @@ class MainActivity : Activity() {
         loadedItemCount > 0 && focusedIndex >= loadedItemCount - PAGINATION_PREFETCH_ITEMS
 
     private fun recommendationSummary(): String {
-        val session = if (recommendationFeedSignedIn) "signed in" else "guest"
-        val more = if (recommendationsHaveMore) " • Scroll for more" else ""
-        return "${recommendationsGrid.childCount} videos • Mobile $session • " +
-            "Page $recommendationPage$more • Press OK to play"
+        val session = getString(if (recommendationFeedSignedIn) R.string.signed_in else R.string.guest)
+        return joinStatus(
+            resources.getQuantityString(
+                R.plurals.video_count,
+                recommendationsGrid.childCount,
+                recommendationsGrid.childCount
+            ),
+            getString(R.string.mobile_session, session),
+            getString(R.string.page_number, recommendationPage),
+            getString(R.string.scroll_for_more).takeIf { recommendationsHaveMore },
+            getString(R.string.press_ok_to_play)
+        )
     }
 
     private fun restoreRecommendationFocus() {
@@ -1221,7 +1239,7 @@ class MainActivity : Activity() {
 
     private fun playRecommendation(video: BilibiliAuthClient.Recommendation) {
         videoCall?.cancel()
-        recommendationsStatus.text = "Opening ${video.title}…"
+        recommendationsStatus.text = getString(R.string.opening_item, video.title)
         videoCall = authClient.fetchVideoUrl(video) { result ->
             runOnUiThread {
                 result.fold(
@@ -1234,9 +1252,8 @@ class MainActivity : Activity() {
                             tracking = BilibiliAuthClient.PlaybackTracking(video.aid, video.cid)
                         )
                     },
-                    onFailure = { error ->
-                        recommendationsStatus.text =
-                            "Could not play video: ${error.message.orEmpty()}"
+                    onFailure = {
+                        recommendationsStatus.text = getString(R.string.play_video_failed)
                     }
                 )
             }
@@ -1265,7 +1282,7 @@ class MainActivity : Activity() {
         val query = searchInput.text.toString().trim()
         showSearch(focusInput = false)
         if (query.isBlank()) {
-            searchStatus.text = "Enter something to search for."
+            searchStatus.text = getString(R.string.search_empty)
             searchInput.requestFocus()
             return
         }
@@ -1289,9 +1306,9 @@ class MainActivity : Activity() {
         val firstPage = searchPage == 0
         val requestedPage = searchPage + 1
         searchStatus.text = if (firstPage) {
-            "Searching for “$searchQuery”…"
+            getString(R.string.searching_for, searchQuery)
         } else {
-            "Loading more search results…"
+            getString(R.string.loading_more_search)
         }
         lateinit var requestCall: Call
         try {
@@ -1310,7 +1327,7 @@ class MainActivity : Activity() {
                             renderSearchResults(page.videos, append = !firstPage)
                             searchLoading = false
                             searchStatus.text = if (searchGrid.childCount == 0) {
-                                "No videos found for “$searchQuery”."
+                                getString(R.string.no_search_results, searchQuery)
                             } else {
                                 searchSummary()
                             }
@@ -1318,9 +1335,9 @@ class MainActivity : Activity() {
                                 searchGrid.post { searchGrid.getChildAt(0)?.requestFocus() }
                             }
                         },
-                        onFailure = { error ->
+                        onFailure = {
                             searchLoading = false
-                            searchStatus.text = "Search failed: ${error.message.orEmpty()}"
+                            searchStatus.text = getString(R.string.search_failed)
                             if (firstPage) searchInput.requestFocus()
                         }
                     )
@@ -1328,7 +1345,7 @@ class MainActivity : Activity() {
             }
         } catch (error: IllegalStateException) {
             searchLoading = false
-            searchStatus.text = "Search is still starting up. Please try again."
+            searchStatus.text = getString(R.string.search_starting)
             searchInput.requestFocus()
             return
         }
@@ -1411,9 +1428,16 @@ class MainActivity : Activity() {
         .mapIndexed { index, part -> if (index == 0) part else part.padStart(2, '0') }
         .joinToString(":")
 
-    private fun searchSummary(): String =
-        "${searchGrid.childCount} videos loaded • Page $searchPage • $searchTotal results" +
-            if (searchHasMore) " • Scroll for more" else ""
+    private fun searchSummary(): String = joinStatus(
+        resources.getQuantityString(
+            R.plurals.video_loaded_count,
+            searchGrid.childCount,
+            searchGrid.childCount
+        ),
+        getString(R.string.page_number, searchPage),
+        resources.getQuantityString(R.plurals.results_total, searchTotal, searchTotal),
+        getString(R.string.scroll_for_more).takeIf { searchHasMore }
+    )
 
     private fun restoreSearchFocus() {
         val target = searchReturnFocus
@@ -1425,7 +1449,7 @@ class MainActivity : Activity() {
 
     private fun playSearchResult(video: BilibiliAuthClient.SearchVideo) {
         videoCall?.cancel()
-        searchStatus.text = "Opening ${cleanSearchText(video.title)}…"
+        searchStatus.text = getString(R.string.opening_item, cleanSearchText(video.title))
         videoCall = authClient.fetchSearchVideoUrl(video) { result ->
             runOnUiThread {
                 result.fold(
@@ -1437,8 +1461,8 @@ class MainActivity : Activity() {
                             returnScreen = PlaybackReturnScreen.SEARCH
                         )
                     },
-                    onFailure = { error ->
-                        searchStatus.text = "Could not play search result: ${error.message.orEmpty()}"
+                    onFailure = {
+                        searchStatus.text = getString(R.string.play_search_failed)
                         restoreSearchFocus()
                     }
                 )
@@ -1493,9 +1517,9 @@ class MainActivity : Activity() {
         followingLoading = true
         val firstPage = followingPage == 0
         followingStatus.text = if (firstPage) {
-            "Loading followed creators…"
+            getString(R.string.loading_following)
         } else {
-            "Loading more followed creators…"
+            getString(R.string.loading_more_following)
         }
         lateinit var requestCall: Call
         requestCall = authClient.fetchFollowing(resolvedAccountId) { result ->
@@ -1520,7 +1544,7 @@ class MainActivity : Activity() {
                         renderFollowedCreators(page.creators, append = !firstPage)
                         followingLoading = false
                         followingStatus.text = if (followingGrid.childCount == 0) {
-                            "No followed creators were returned."
+                            getString(R.string.no_following)
                         } else {
                             followingCreatorsSummary()
                         }
@@ -1529,10 +1553,9 @@ class MainActivity : Activity() {
                             restoreFollowingFocus(0)
                         }
                     },
-                    onFailure = { error ->
+                    onFailure = {
                         followingLoading = false
-                        followingStatus.text =
-                            "Following request failed: ${error.message.orEmpty()}"
+                        followingStatus.text = getString(R.string.following_request_failed)
                         if (firstPage && !navigationHasFocus()) loginButton.requestFocus()
                     }
                 )
@@ -1566,7 +1589,7 @@ class MainActivity : Activity() {
             card.findViewById<TextView>(R.id.recommendation_title).text = creator.name
             card.findViewById<TextView>(R.id.recommendation_duration).text = ""
             card.findViewById<TextView>(R.id.recommendation_meta).text =
-                creator.description.ifBlank { "Followed creator" }
+                creator.description.ifBlank { getString(R.string.followed_creator) }
             card.contentDescription = listOf(creator.name, creator.description)
                 .filter(String::isNotBlank)
                 .joinToString(", ")
@@ -1643,9 +1666,9 @@ class MainActivity : Activity() {
         val firstPage = creatorVideoPage == 0
         val requestedPage = creatorVideoPage + 1
         followingStatus.text = if (firstPage) {
-            "Loading recent videos…"
+            getString(R.string.loading_creator_videos)
         } else {
-            "Loading more recent videos…"
+            getString(R.string.loading_more_creator_videos)
         }
         lateinit var requestCall: Call
         requestCall = authClient.fetchCreatorVideos(creator, requestedPage) { result ->
@@ -1670,7 +1693,7 @@ class MainActivity : Activity() {
                         renderCreatorVideos(page.videos, append = !firstPage)
                         creatorVideosLoading = false
                         followingStatus.text = if (followingGrid.childCount == 0) {
-                            "No public videos were returned for this creator."
+                            getString(R.string.no_creator_videos)
                         } else {
                             creatorVideosSummary()
                         }
@@ -1679,10 +1702,9 @@ class MainActivity : Activity() {
                             restoreFollowingFocus(0)
                         }
                     },
-                    onFailure = { error ->
+                    onFailure = {
                         creatorVideosLoading = false
-                        followingStatus.text =
-                            "Creator-video request failed: ${error.message.orEmpty()}"
+                        followingStatus.text = getString(R.string.creator_videos_request_failed)
                         if (firstPage && !navigationHasFocus()) followingBackButton.requestFocus()
                     }
                 )
@@ -1760,7 +1782,7 @@ class MainActivity : Activity() {
 
     private fun playCreatorVideo(video: BilibiliAuthClient.CreatorVideo) {
         videoCall?.cancel()
-        followingStatus.text = "Opening ${video.title}…"
+        followingStatus.text = getString(R.string.opening_item, video.title)
         videoCall = authClient.fetchCreatorVideoUrl(video) { result ->
             runOnUiThread {
                 result.fold(
@@ -1772,9 +1794,8 @@ class MainActivity : Activity() {
                             returnScreen = PlaybackReturnScreen.FOLLOWING
                         )
                     },
-                    onFailure = { error ->
-                        followingStatus.text =
-                            "Could not play creator video: ${error.message.orEmpty()}"
+                    onFailure = {
+                        followingStatus.text = getString(R.string.play_creator_video_failed)
                         restoreFollowingFocus(creatorVideoFocusIndex)
                     }
                 )
@@ -1782,13 +1803,27 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun followingCreatorsSummary(): String =
-        "${followedCreators.size} creators loaded • Page $followingPage • $followingTotal total" +
-            if (followingHasMore) " • Scroll for more" else ""
+    private fun followingCreatorsSummary(): String = joinStatus(
+        resources.getQuantityString(
+            R.plurals.creator_loaded_count,
+            followedCreators.size,
+            followedCreators.size
+        ),
+        getString(R.string.page_number, followingPage),
+        resources.getQuantityString(R.plurals.total_count, followingTotal, followingTotal),
+        getString(R.string.scroll_for_more).takeIf { followingHasMore }
+    )
 
-    private fun creatorVideosSummary(): String =
-        "${creatorVideos.size} videos loaded • Page $creatorVideoPage • $creatorVideoTotal total" +
-            if (creatorVideosHaveMore) " • Scroll for more" else ""
+    private fun creatorVideosSummary(): String = joinStatus(
+        resources.getQuantityString(
+            R.plurals.video_loaded_count,
+            creatorVideos.size,
+            creatorVideos.size
+        ),
+        getString(R.string.page_number, creatorVideoPage),
+        resources.getQuantityString(R.plurals.total_count, creatorVideoTotal, creatorVideoTotal),
+        getString(R.string.scroll_for_more).takeIf { creatorVideosHaveMore }
+    )
 
     private fun restoreFollowingFocus(index: Int) {
         followingGrid.post {
@@ -1808,20 +1843,19 @@ class MainActivity : Activity() {
                         currentAccount = account
                         accountCheckComplete = true
                         loginButton.contentDescription = account?.let {
-                            "Account, signed in as ${it.name}"
-                        } ?: "Account, not signed in"
+                            getString(R.string.account_signed_in_description, it.name)
+                        } ?: getString(R.string.account_signed_out_description)
                         if (currentBrowseScreen == BrowseScreen.ACCOUNT) {
                             account?.let(::showSignedInAccount) ?: startQrLogin()
                         }
                     },
-                    onFailure = { error ->
+                    onFailure = {
                         currentAccount = null
                         accountCheckComplete = true
-                        accountCheckError = error.message.orEmpty()
-                        loginButton.contentDescription =
-                            "Account check failed: ${error.message.orEmpty()}"
+                        accountCheckError = getString(R.string.account_check_failed)
+                        loginButton.contentDescription = getString(R.string.account_check_failed_description)
                         if (currentBrowseScreen == BrowseScreen.ACCOUNT) {
-                            showAccountError(error.message.orEmpty())
+                            showAccountError()
                         }
                     }
                 )
@@ -1847,7 +1881,7 @@ class MainActivity : Activity() {
         when {
             !accountCheckComplete -> showAccountChecking()
             currentAccount != null -> showSignedInAccount(currentAccount!!)
-            accountCheckError != null -> showAccountError(accountCheckError.orEmpty())
+            accountCheckError != null -> showAccountError()
             else -> startQrLogin()
         }
     }
@@ -1877,12 +1911,12 @@ class MainActivity : Activity() {
         newQrButton.visibility = View.VISIBLE
     }
 
-    private fun showAccountError(message: String) {
+    private fun showAccountError() {
         cancelQrLogin()
         qrImage.visibility = View.GONE
         setLoginDetailsStartMargin(0)
         loginTitle.text = getString(R.string.account_title)
-        loginStatus.text = "Could not check your account: $message"
+        loginStatus.text = getString(R.string.account_check_failed)
         followingAccountsButton.visibility = View.GONE
         newQrButton.text = getString(R.string.new_qr_code)
         newQrButton.isEnabled = true
@@ -1912,7 +1946,7 @@ class MainActivity : Activity() {
         qrImage.setImageDrawable(null)
         setLoginDetailsStartMargin(36)
         loginTitle.text = getString(R.string.qr_login_title)
-        loginStatus.text = "Requesting a QR code…"
+        loginStatus.text = getString(R.string.requesting_qr)
         loginButton.nextFocusDownId = R.id.new_qr_button
         followingAccountsButton.visibility = View.GONE
         newQrButton.text = getString(R.string.new_qr_code)
@@ -1930,8 +1964,8 @@ class MainActivity : Activity() {
                         newQrButton.isEnabled = true
                         scheduleQrPoll()
                     },
-                    onFailure = { error ->
-                        loginStatus.text = "Could not create QR code: ${error.message.orEmpty()}"
+                    onFailure = {
+                        loginStatus.text = getString(R.string.create_qr_failed)
                         newQrButton.isEnabled = true
                     }
                 )
@@ -1970,12 +2004,12 @@ class MainActivity : Activity() {
                 if (key != qrKey || loginPanel.visibility != View.VISIBLE) return@runOnUiThread
                 result.fold(
                     onSuccess = { poll ->
-                        loginStatus.text = poll.message
+                        loginStatus.text = getString(qrStateString(poll.state))
                         when (poll.state) {
                             BilibiliAuthClient.QrState.AUTHENTICATED -> {
                                 qrKey = null
                                 mainHandler.postDelayed({
-                                    loginStatus.text = "Signed in. Loading your account…"
+                                    loginStatus.text = getString(R.string.loading_account)
                                     checkAccount()
                                 }, 500L)
                             }
@@ -1986,14 +2020,24 @@ class MainActivity : Activity() {
                             else -> scheduleQrPoll()
                         }
                     },
-                    onFailure = { error ->
-                        loginStatus.text = "QR status check failed: ${error.message.orEmpty()}"
+                    onFailure = {
+                        loginStatus.text = getString(R.string.qr_check_failed)
                         scheduleQrPoll()
                     }
                 )
             }
         }
     }
+
+    private fun qrStateString(state: BilibiliAuthClient.QrState): Int = when (state) {
+        BilibiliAuthClient.QrState.WAITING_FOR_SCAN -> R.string.qr_waiting_scan
+        BilibiliAuthClient.QrState.WAITING_FOR_CONFIRMATION -> R.string.qr_waiting_confirmation
+        BilibiliAuthClient.QrState.EXPIRED -> R.string.qr_expired
+        BilibiliAuthClient.QrState.AUTHENTICATED -> R.string.qr_signed_in
+    }
+
+    private fun joinStatus(vararg parts: String?): String =
+        parts.filterNotNull().filter(String::isNotBlank).joinToString(" • ")
 
     private fun cancelQrLogin() {
         mainHandler.removeCallbacks(qrPollRunnable)
@@ -2166,7 +2210,7 @@ class MainActivity : Activity() {
 
     private fun showPlaybackError(error: PlaybackException) {
         val returnScreen = playbackReturnScreen
-        val message = "Playback failed: ${error.errorCodeName} • ${error.message.orEmpty()}"
+        val message = getString(R.string.playback_failed, error.errorCodeName)
         stopPlayback()
         when (returnScreen) {
             PlaybackReturnScreen.RECOMMENDATIONS -> {

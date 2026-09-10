@@ -36,4 +36,78 @@
     <string name="video_player_hint">Press Back to return to recommendations.</string>
     <string name="history_player_hint">Press Back to return to watch history.</string>
     <string name="live_player_hint">Press Back to return to live rooms.</string>
+    <string name="selected_option">%1$s ✓</string>
+    <string name="automatic">Auto</string>
+    <string name="audio_track">Audio %1$d</string>
+    <string name="unknown_creator">Unknown creator</string>
+    <string name="untitled_video">Untitled video</string>
+    <string name="untitled_live_room">Untitled live room</string>
+    <string name="loading_more_live">Loading more live rooms…</string>
+    <string name="loading_followed_live">Loading followed live rooms…</string>
+    <string name="loading_popular_live">Loading popular live rooms…</string>
+    <string name="no_followed_live">None of the accounts you follow are live right now.</string>
+    <string name="no_popular_live">No active live rooms were returned.</string>
+    <string name="live_request_failed">Couldn’t load live rooms. Please try again.</string>
+    <string name="live_label">Live</string>
+    <string name="opening_item">Opening %1$s…</string>
+    <string name="play_live_failed">Couldn’t play this live room.</string>
+    <string name="loading_history">Loading account watch history…</string>
+    <string name="loading_more_history">Loading more watch history…</string>
+    <string name="no_history">No playable watch history was returned.</string>
+    <string name="looking_for_history">Looking for playable history entries…</string>
+    <string name="history_request_failed">Couldn’t load watch history. Please try again.</string>
+    <string name="watched_duration">Watched • %1$s</string>
+    <string name="scroll_for_more">Scroll for more</string>
+    <string name="page_number">Page %1$d</string>
+    <string name="play_history_failed">Couldn’t play this history item.</string>
+    <string name="loading_recommendations">Loading the mobile recommendation feed…</string>
+    <string name="loading_more_recommendations">Loading more recommendations…</string>
+    <string name="no_recommendations">No playable videos were returned.</string>
+    <string name="recommendations_request_failed">Couldn’t load recommendations. Please try again.</string>
+    <string name="signed_in">signed in</string>
+    <string name="guest">guest</string>
+    <string name="mobile_session">Mobile %1$s</string>
+    <string name="press_ok_to_play">Press OK to play</string>
+    <string name="play_video_failed">Couldn’t play this video.</string>
+    <string name="search_empty">Enter something to search for.</string>
+    <string name="searching_for">Searching for “%1$s”…</string>
+    <string name="loading_more_search">Loading more search results…</string>
+    <string name="no_search_results">No videos found for “%1$s”.</string>
+    <string name="search_failed">Search failed. Please try again.</string>
+    <string name="search_starting">Search is still starting up. Please try again.</string>
+    <string name="play_search_failed">Couldn’t play this search result.</string>
+    <string name="loading_following">Loading followed creators…</string>
+    <string name="loading_more_following">Loading more followed creators…</string>
+    <string name="no_following">No followed creators were returned.</string>
+    <string name="following_request_failed">Couldn’t load followed creators. Please try again.</string>
+    <string name="followed_creator">Followed creator</string>
+    <string name="loading_creator_videos">Loading recent videos…</string>
+    <string name="loading_more_creator_videos">Loading more recent videos…</string>
+    <string name="no_creator_videos">No public videos were returned for this creator.</string>
+    <string name="creator_videos_request_failed">Couldn’t load this creator’s videos. Please try again.</string>
+    <string name="play_creator_video_failed">Couldn’t play this creator’s video.</string>
+    <string name="account_signed_in_description">Account, signed in as %1$s</string>
+    <string name="account_signed_out_description">Account, not signed in</string>
+    <string name="account_check_failed_description">Account check failed</string>
+    <string name="account_check_failed">Couldn’t check your account. Please try again.</string>
+    <string name="requesting_qr">Requesting a QR code…</string>
+    <string name="create_qr_failed">Couldn’t create a QR code. Please try again.</string>
+    <string name="qr_signed_in">Signed in successfully.</string>
+    <string name="qr_waiting_scan">Waiting to be scanned…</string>
+    <string name="qr_waiting_confirmation">Scanned. Confirm sign-in on your phone.</string>
+    <string name="qr_expired">This QR code has expired.</string>
+    <string name="loading_account">Signed in. Loading your account…</string>
+    <string name="qr_check_failed">Couldn’t check QR status. Retrying…</string>
+    <string name="playback_failed">Playback failed (%1$s).</string>
+    <string name="crash_title">Bileebilee startup crash</string>
+    <string name="crash_instructions">Photograph this screen for diagnosis. Use the D-pad to scroll if needed.</string>
+    <string name="crash_retry">Clear report and retry</string>
+    <plurals name="live_room_count"><item quantity="one">%1$d live room</item><item quantity="other">%1$d live rooms</item></plurals>
+    <plurals name="playable_count"><item quantity="one">%1$d playable item</item><item quantity="other">%1$d playable items</item></plurals>
+    <plurals name="video_count"><item quantity="one">%1$d video</item><item quantity="other">%1$d videos</item></plurals>
+    <plurals name="video_loaded_count"><item quantity="one">%1$d video loaded</item><item quantity="other">%1$d videos loaded</item></plurals>
+    <plurals name="creator_loaded_count"><item quantity="one">%1$d creator loaded</item><item quantity="other">%1$d creators loaded</item></plurals>
+    <plurals name="unsupported_count"><item quantity="one">%1$d unsupported item</item><item quantity="other">%1$d unsupported items</item></plurals>
+    <plurals name="results_total"><item quantity="one">%1$d result</item><item quantity="other">%1$d results</item></plurals>
+    <plurals name="total_count"><item quantity="one">%1$d total</item><item quantity="other">%1$d total</item></plurals>
 </resources>
