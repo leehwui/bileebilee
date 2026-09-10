@@ -5,3 +5,7 @@ local.properties
 **/build/
 *.iml
 .DS_Store
+
+# Local emulator documentation and editor artifacts
+LOCAL_EMULATOR.md
+.LOCAL_EMULATOR.md.*
